@@ -14,190 +14,271 @@ import { apiFetch } from "@/lib/api";
 import { DocumentUpload } from "@/components/DocumentUpload";
 import { CustomFields, type CustomField } from "@/components/CustomFields";
 
-// Custom validation function for date gap
-const validateDateGap = (dateOfBirth: string, dateOfJoining: string) => {
-  if (!dateOfBirth || !dateOfJoining) return true; // Let individual field validation handle empty values
-  
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type AutoSaveStatus = "idle" | "saving" | "saved";
+
+interface DocumentMeta {
+  name: string;
+  size: number;
+  uploadedAt: string;
+}
+
+interface DocumentMap {
+  personal?: DocumentMeta;
+  [section: string]: DocumentMeta | undefined;
+}
+
+interface ProfilePersonalDetails extends PersonalDetailsFormData {
+  customFields?: CustomField[];
+}
+
+interface ProfileResponse {
+  personalDetails?: ProfilePersonalDetails;
+  documents?: {
+    personal?: DocumentMeta;
+    [section: string]: DocumentMeta | undefined;
+  };
+}
+
+// ─── Validation ───────────────────────────────────────────────────────────────
+
+const validateDateGap = (dateOfBirth: string, dateOfJoining: string): boolean => {
+  if (!dateOfBirth || !dateOfJoining) return true;
+
   const birthDate = new Date(dateOfBirth);
   const joiningDate = new Date(dateOfJoining);
-  
-  const ageAtJoining = joiningDate.getFullYear() - birthDate.getFullYear();
+
+  let age = joiningDate.getFullYear() - birthDate.getFullYear();
   const monthDiff = joiningDate.getMonth() - birthDate.getMonth();
-  
-  // Adjust age if birthday hasn't occurred yet in the joining year
+
   if (monthDiff < 0 || (monthDiff === 0 && joiningDate.getDate() < birthDate.getDate())) {
-    return ageAtJoining - 1 >= 15;
+    age -= 1;
   }
-  
-  return ageAtJoining >= 15;
+
+  return age >= 15;
 };
 
-const personalDetailsSchema = z.object({
-  fullName: z.string().min(2, "Full name must be at least 2 characters"),
-  serviceNumber: z
-    .string()
-    .min(5, "Army number is required")
-    .regex(/^[A-Za-z0-9\-\/]+$/, "Army number may contain letters, numbers, - or /"),
-  rank: z.string().min(1, "Rank is required"),
-  dateOfJoining: z.string().min(1, "Date of joining is required"),
-  dateOfBirth: z.string().min(1, "Date of birth is required"),
-  phoneNumber: z
-    .string()
-    .min(10, "Valid phone number is required")
-    .regex(/^[0-9+\-\s()]{10,}$/, "Valid phone number is required"),
-  email: z.string().email("Valid email is required"),
-  address: z.string().min(10, "Address must be at least 10 characters"),
-  emergencyContactName: z.string().min(2, "Emergency contact name is required"),
-  emergencyContactPhone: z
-    .string()
-    .min(10, "Emergency contact phone is required")
-    .regex(/^[0-9+\-\s()]{10,}$/, "Valid emergency contact phone is required"),
-  emergencyContactRelation: z.string().min(1, "Emergency contact relation is required"),
-}).refine((data) => validateDateGap(data.dateOfBirth, data.dateOfJoining), {
-  message: "There must be at least 15 years between date of birth and date of joining",
-  path: ["dateOfJoining"], // This will show the error on the dateOfJoining field
-});
+const personalDetailsSchema = z
+  .object({
+    fullName: z.string().min(2, "Full name must be at least 2 characters"),
+    serviceNumber: z
+      .string()
+      .min(5, "Army number is required")
+      .regex(/^[A-Za-z0-9\-\/]+$/, "Army number may contain letters, numbers, - or /"),
+    rank: z.string().min(1, "Rank is required"),
+    dateOfJoining: z.string().min(1, "Date of joining is required"),
+    dateOfBirth: z.string().min(1, "Date of birth is required"),
+    phoneNumber: z
+      .string()
+      .min(10, "Valid phone number is required")
+      .regex(/^[0-9+\-\s()]{10,}$/, "Valid phone number is required"),
+    email: z.string().email("Valid email is required"),
+    address: z.string().min(10, "Address must be at least 10 characters"),
+    emergencyContactName: z.string().min(2, "Emergency contact name is required"),
+    emergencyContactPhone: z
+      .string()
+      .min(10, "Emergency contact phone is required")
+      .regex(/^[0-9+\-\s()]{10,}$/, "Valid emergency contact phone is required"),
+    emergencyContactRelation: z.string().min(1, "Emergency contact relation is required"),
+  })
+  .refine(
+    (data) => validateDateGap(data.dateOfBirth, data.dateOfJoining),
+    {
+      message: "There must be at least 15 years between date of birth and date of joining",
+      path: ["dateOfJoining"],
+    }
+  );
 
 type PersonalDetailsFormData = z.infer<typeof personalDetailsSchema>;
 
-const ranks = [
-  "AV",
-  "SEP",
-  "L/NK",
-  "NK",
-  "AAV",
-  "N/B SUB",
-  "SUB",
-  "SUB MAJ",
-];
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const RANKS = ["AV", "SEP", "L/NK", "NK", "AAV", "N/B SUB", "SUB", "SUB MAJ"] as const;
+
+const DEFAULT_VALUES: PersonalDetailsFormData = {
+  fullName: "",
+  serviceNumber: "",
+  rank: "",
+  dateOfJoining: "",
+  dateOfBirth: "",
+  phoneNumber: "",
+  email: "",
+  address: "",
+  emergencyContactName: "",
+  emergencyContactPhone: "",
+  emergencyContactRelation: "",
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function PersonalDetailsForm() {
   const [isLoading, setIsLoading] = useState(false);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const [documents, setDocuments] = useState<any>({});
+  const [autoSaveStatus, setAutoSaveStatus] = useState<AutoSaveStatus>("idle");
+  const [documents, setDocuments] = useState<DocumentMap>({});
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
+  const storageKey = user ? `personalDetails:${user.id}` : "personalDetails";
+
   const form = useForm<PersonalDetailsFormData>({
     resolver: zodResolver(personalDetailsSchema),
-    defaultValues: {
-      fullName: "",
-      serviceNumber: "",
-      rank: "",
-      dateOfJoining: "",
-      dateOfBirth: "",
-      phoneNumber: "",
-      email: "",
-      address: "",
-      emergencyContactName: "",
-      emergencyContactPhone: "",
-      emergencyContactRelation: "",
-    },
+    defaultValues: DEFAULT_VALUES,
   });
 
-  // Load documents on mount
+  // ── Load documents on mount ──────────────────────────────────────────────
+
   useEffect(() => {
     loadDocuments();
   }, []);
 
-  const loadDocuments = async () => {
+  const loadDocuments = async (): Promise<void> => {
     try {
-      const profile = await apiFetch<any>("/api/profile");
-      if (profile?.documents?.personal) {
-        setDocuments(prev => ({ ...prev, personal: profile.documents.personal }));
+      const profile = await apiFetch<ProfileResponse>("/api/profile");
+      if (profile?.documents) {
+        setDocuments(profile.documents as DocumentMap);
       }
     } catch (error) {
       console.error("Failed to load documents:", error);
     }
   };
 
-  const handleDocumentUpload = async (file: File, section: string) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('section', section);
+  // ── Document handlers ────────────────────────────────────────────────────
 
-    await apiFetch("/api/profile/documents", {
+  const handleDocumentUpload = async (file: File, section: string): Promise<void> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("section", section);
+
+    await apiFetch<void>("/api/profile/documents", {
       method: "POST",
       body: formData,
-      headers: {}, // Let the browser set the content-type for FormData
     });
 
-    // Reload documents after upload
     await loadDocuments();
   };
 
-  const handleDocumentRemove = async (section: string) => {
-    await apiFetch(`/api/profile/documents/${section}`, {
-      method: "DELETE",
-    });
+  const handleDocumentRemove = async (section: string): Promise<void> => {
+    await apiFetch<void>(`/api/profile/documents/${section}`, { method: "DELETE" });
 
-    // Update local state
-    setDocuments(prev => {
-      const newDocs = { ...prev };
-      delete newDocs[section];
-      return newDocs;
+    setDocuments((prev) => {
+      const updated = { ...prev };
+      delete updated[section];
+      return updated;
     });
   };
 
-  // Auto-save functionality (local fallback, namespaced by user)
+  const handleDocumentDownload = async (section: string): Promise<void> => {
+    try {
+      const response = await fetch(`/api/profile/documents/${section}`, {
+        credentials: "include",
+      });
+
+      if (!response.ok) throw new Error("Download failed");
+
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get("Content-Disposition");
+
+      const match = contentDisposition?.match(/filename="?([^"]+)"?/);
+      const filename = match?.[1] ?? `${section}-document.pdf`;
+
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({
+        title: "Error",
+        description: "Failed to download document",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // ── Auto-save to localStorage ────────────────────────────────────────────
+
   useEffect(() => {
     const subscription = form.watch((data) => {
-      if (Object.values(data).some((value) => value !== "")) {
-        setAutoSaveStatus("saving");
-        const timer = setTimeout(() => {
-          try {
-            const key = user ? `personalDetails:${user.id}` : "personalDetails";
-            localStorage.setItem(key, JSON.stringify(data));
-          } catch {
-            // ignore storage errors
-          }
-          setAutoSaveStatus("saved");
-          setTimeout(() => setAutoSaveStatus("idle"), 2000);
-        }, 1000);
-        return () => clearTimeout(timer);
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [form, user]);
+      const hasAnyValue = Object.values(data).some((v) => v !== "");
+      if (!hasAnyValue) return;
 
-  // Load saved data from API on mount; fallback to localStorage
+      setAutoSaveStatus("saving");
+      const timer = setTimeout(() => {
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(data));
+        } catch {
+          // Ignore storage errors
+        }
+        setAutoSaveStatus("saved");
+        setTimeout(() => setAutoSaveStatus("idle"), 2000);
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [form, storageKey]);
+
+  // ── Load saved data (API → localStorage fallback) ────────────────────────
+
   useEffect(() => {
     let cancelled = false;
-    async function load() {
+
+    const load = async (): Promise<void> => {
       try {
-        const profile = await apiFetch<any>("/api/profile");
+        const profile = await apiFetch<ProfileResponse>("/api/profile");
         if (!cancelled && profile?.personalDetails) {
           form.reset(profile.personalDetails);
-          setCustomFields(Array.isArray(profile.personalDetails.customFields) ? profile.personalDetails.customFields : []);
+          setCustomFields(
+            Array.isArray(profile.personalDetails.customFields)
+              ? profile.personalDetails.customFields
+              : []
+          );
           return;
         }
-      } catch {}
+      } catch {
+        // Fall through to localStorage
+      }
+
       try {
-        const key = user ? `personalDetails:${user.id}` : "personalDetails";
-        const savedData = localStorage.getItem(key);
-        if (savedData) {
-          const parsed = JSON.parse(savedData);
+        const raw = localStorage.getItem(storageKey);
+        if (raw) {
+          const parsed: ProfilePersonalDetails = JSON.parse(raw);
           form.reset(parsed);
           setCustomFields(Array.isArray(parsed.customFields) ? parsed.customFields : []);
         }
-      } catch {}
-    }
-    load();
-    return () => { cancelled = true };
-  }, [form, user]);
+      } catch {
+        // Ignore malformed storage data
+      }
+    };
 
-  const onSubmit = async (data: PersonalDetailsFormData) => {
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [form, storageKey]);
+
+  // ── Submit ───────────────────────────────────────────────────────────────
+
+  const onSubmit = async (data: PersonalDetailsFormData): Promise<void> => {
     setIsLoading(true);
+    const payload: ProfilePersonalDetails = { ...data, customFields };
+
     try {
-      await apiFetch("/api/profile/personal", { method: "PUT", body: JSON.stringify({ ...data, customFields }) });
-      const key = user ? `personalDetails:${user.id}` : "personalDetails";
-      localStorage.setItem(key, JSON.stringify({ ...data, customFields }));
-      toast({
-        title: "Success",
-        description: "Personal details saved successfully",
+      await apiFetch<void>("/api/profile/personal", {
+        method: "PUT",
+        body: JSON.stringify(payload),
       });
-    } catch (error) {
+
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+      form.reset(DEFAULT_VALUES);
+      setCustomFields([]);
+
+      toast({ title: "Success", description: "Personal details saved successfully" });
+    } catch {
       toast({
         title: "Error",
         description: "Failed to save personal details",
@@ -208,15 +289,20 @@ export function PersonalDetailsForm() {
     }
   };
 
+  // ── Render ───────────────────────────────────────────────────────────────
+
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <div className="p-3 rounded-lg bg-primary/10">
           <User className="h-6 w-6 text-primary" />
         </div>
         <div>
           <h1 className="text-2xl font-bold text-foreground">Personal Details</h1>
-          <p className="text-muted-foreground">Manage your personal information and emergency contacts</p>
+          <p className="text-muted-foreground">
+            Manage your personal information and emergency contacts
+          </p>
         </div>
         {autoSaveStatus !== "idle" && (
           <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
@@ -226,6 +312,7 @@ export function PersonalDetailsForm() {
         )}
       </div>
 
+      {/* Main Form Card */}
       <Card className="shadow-soft">
         <CardHeader className="bg-gradient-card rounded-t-lg">
           <CardTitle>Basic Information</CardTitle>
@@ -276,7 +363,7 @@ export function PersonalDetailsForm() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {ranks.map((rank) => (
+                          {RANKS.map((rank) => (
                             <SelectItem key={rank} value={rank}>
                               {rank}
                             </SelectItem>
@@ -359,10 +446,13 @@ export function PersonalDetailsForm() {
                 )}
               />
 
+              {/* Emergency Contact */}
               <Card className="bg-accent/30">
                 <CardHeader className="pb-4">
                   <CardTitle className="text-lg">Emergency Contact</CardTitle>
-                  <CardDescription>Provide details of someone to contact in case of emergency</CardDescription>
+                  <CardDescription>
+                    Provide details of someone to contact in case of emergency
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -438,12 +528,12 @@ export function PersonalDetailsForm() {
         </CardContent>
       </Card>
 
-      {/* Document Upload Section */}
       <DocumentUpload
         section="personal"
         onDocumentUpload={handleDocumentUpload}
         existingDocument={documents.personal}
         onDocumentRemove={handleDocumentRemove}
+        onDocumentDownload={handleDocumentDownload}
       />
     </div>
   );
