@@ -138,6 +138,24 @@ router.put("/profile/education", requireAuth, async (req: AuthenticatedRequest, 
   }
 });
 
+
+// ─── Update Leave Details ───────────────────────────────────────────────────
+
+router.put("/profile/leave", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.auth.userId;
+
+    await upsertProfile(userId, {
+      leave: req.body as Record<string, unknown>
+    });
+
+    res.json({ ok: true });
+  } catch (e: unknown) {
+    console.error("Update leave details error:", e);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
 // ─── Update Medical Details ───────────────────────────────────────────────────
 
 router.put("/profile/medical", requireAuth, async (req: AuthenticatedRequest, res) => {
@@ -151,9 +169,27 @@ router.put("/profile/medical", requireAuth, async (req: AuthenticatedRequest, re
   }
 });
 
+
+// ─── Update Salary Details ───────────────────────────────────────────────────
+
+router.put("/profile/salary", requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.auth.userId;
+
+    await upsertProfile(userId, {
+      salary: req.body as Record<string, unknown>
+    });
+
+    res.json({ ok: true });
+  } catch (e: unknown) {
+    console.error("Update salary error:", e);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
 // ─── Update Others Details ────────────────────────────────────────────────────
 
-router.put("/others", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/profile/others", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId;
     await upsertProfile(userId, { others: req.body as Record<string, unknown> });
