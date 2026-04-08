@@ -7,21 +7,33 @@ import { requireAuth } from "../middleware/auth.js";
 import { AuthenticatedRequest } from "../types/index.js";
 import UserProfile from "../models/UserProfile.js";
 
-// Extend AuthenticatedRequest to include multer's file field
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 interface MulterRequest extends AuthenticatedRequest {
   file?: Express.Multer.File;
 }
 
+interface DocumentRecord {
+  name: string;
+  filename: string;
+  size: number;
+  uploadedAt: string;
+  path: string;
+}
+
+type DocumentsMap = Record<string, DocumentRecord>;
+
+// ─── Setup ────────────────────────────────────────────────────────────────────
+
 const router = express.Router();
 
-// ESM fix for __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ─── Multer Config ────────────────────────────────────────────────────────────
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (req, _file, cb) => {
     const uploadDir = path.join(__dirname, "../../uploads");
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
@@ -30,7 +42,7 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const userId = (req as AuthenticatedRequest).auth.userId;
-    const section = req.body.section;
+    const section = (req as express.Request).body.section as string;
     const timestamp = Date.now();
     const ext = path.extname(file.originalname);
     cb(null, `${userId}_${section}_${timestamp}${ext}`);
@@ -40,7 +52,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: { fileSize: 300 * 1024 }, // 300KB
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req, file, cb) => {
     if (file.mimetype === "application/pdf") {
       cb(null, true);
     } else {
@@ -51,11 +63,26 @@ const upload = multer({
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-async function upsertProfile(userId: string, update: Record<string, any>) {
+async function upsertProfile(userId: string, update: Record<string, unknown>) {
   return UserProfile.findOneAndUpdate(
     { userId },
     { ...update, updatedAt: new Date() },
     { upsert: true, new: true }
+  );
+}
+
+function isDocumentsMap(value: unknown): value is DocumentsMap {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isDocumentRecord(value: unknown): value is DocumentRecord {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "path" in value &&
+    "name" in value &&
+    typeof (value as DocumentRecord).path === "string" &&
+    typeof (value as DocumentRecord).name === "string"
   );
 }
 
@@ -65,8 +92,8 @@ router.get("/profile", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId;
     const profile = await UserProfile.findOne({ userId });
-    res.json(profile || {});
-  } catch (e) {
+    res.json(profile ?? {});
+  } catch (e: unknown) {
     console.error("Get profile error:", e);
     res.status(500).json({ error: "Internal error" });
   }
@@ -74,12 +101,12 @@ router.get("/profile", requireAuth, async (req: AuthenticatedRequest, res) => {
 
 // ─── Update Personal Details ──────────────────────────────────────────────────
 
-router.put("/personal", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/profile/personal", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId;
-    await upsertProfile(userId, { personalDetails: req.body });
+    await upsertProfile(userId, { personalDetails: req.body as Record<string, unknown> });
     res.json({ ok: true });
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("Update personal details error:", e);
     res.status(500).json({ error: "Internal error" });
   }
@@ -87,12 +114,12 @@ router.put("/personal", requireAuth, async (req: AuthenticatedRequest, res) => {
 
 // ─── Update Family Details ────────────────────────────────────────────────────
 
-router.put("/family", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/profile/family", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId;
-    await upsertProfile(userId, { family: req.body });
+    await upsertProfile(userId, { family: req.body as Record<string, unknown> });
     res.json({ ok: true });
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("Update family details error:", e);
     res.status(500).json({ error: "Internal error" });
   }
@@ -100,12 +127,12 @@ router.put("/family", requireAuth, async (req: AuthenticatedRequest, res) => {
 
 // ─── Update Education Details ─────────────────────────────────────────────────
 
-router.put("/education", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/profile/education", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId;
-    await upsertProfile(userId, { education: req.body });
+    await upsertProfile(userId, { education: req.body as Record<string, unknown> });
     res.json({ ok: true });
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("Update education details error:", e);
     res.status(500).json({ error: "Internal error" });
   }
@@ -113,12 +140,12 @@ router.put("/education", requireAuth, async (req: AuthenticatedRequest, res) => 
 
 // ─── Update Medical Details ───────────────────────────────────────────────────
 
-router.put("/medical", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.put("/profile/medical", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId;
-    await upsertProfile(userId, { medical: req.body });
+    await upsertProfile(userId, { medical: req.body as Record<string, unknown> });
     res.json({ ok: true });
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("Update medical details error:", e);
     res.status(500).json({ error: "Internal error" });
   }
@@ -129,9 +156,9 @@ router.put("/medical", requireAuth, async (req: AuthenticatedRequest, res) => {
 router.put("/others", requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.auth.userId;
-    await upsertProfile(userId, { others: req.body });
+    await upsertProfile(userId, { others: req.body as Record<string, unknown> });
     res.json({ ok: true });
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("Update others details error:", e);
     res.status(500).json({ error: "Internal error" });
   }
@@ -140,22 +167,25 @@ router.put("/others", requireAuth, async (req: AuthenticatedRequest, res) => {
 // ─── Upload Document ──────────────────────────────────────────────────────────
 
 router.post(
-  "/documents",
+  "/profile/documents",
   requireAuth,
   upload.single("file"),
   async (req: MulterRequest, res) => {
     try {
       const userId = req.auth.userId;
-      const section = req.body.section;
+      const section = req.body.section as string | undefined;
       const file = req.file;
 
       if (!file) return res.status(400).json({ error: "No file uploaded" });
       if (!section) return res.status(400).json({ error: "Section is required" });
 
       const profile = await UserProfile.findOne({ userId }).select("documents");
-      const currentDocuments = (profile?.documents as Record<string, any>) || {};
+      const rawDocuments: unknown = profile?.documents;
+      const currentDocuments: DocumentsMap = isDocumentsMap(rawDocuments)
+        ? (rawDocuments as DocumentsMap)
+        : {};
 
-      const newDocument = {
+      const newDocument: DocumentRecord = {
         name: file.originalname,
         filename: file.filename,
         size: file.size,
@@ -163,11 +193,11 @@ router.post(
         path: file.path,
       };
 
-      const updatedDocuments = { ...currentDocuments, [section]: newDocument };
+      const updatedDocuments: DocumentsMap = { ...currentDocuments, [section]: newDocument };
       await upsertProfile(userId, { documents: updatedDocuments });
 
       res.json({ ok: true, document: newDocument });
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("Upload document error:", e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -175,9 +205,8 @@ router.post(
 );
 
 // ─── Remove Document ──────────────────────────────────────────────────────────
-
 router.delete(
-  "/documents/:section",
+  "/profile/documents/:section",  // was hardcoded to "/profile/documents/personal"
   requireAuth,
   async (req: AuthenticatedRequest, res) => {
     try {
@@ -185,29 +214,34 @@ router.delete(
       const section = req.params.section;
 
       const profile = await UserProfile.findOne({ userId }).select("documents");
-      if (!profile?.documents)
+      if (!profile?.documents) {
         return res.status(404).json({ error: "No documents found" });
+      }
 
-      const currentDocuments = profile.documents as any;
-      const documentToRemove = currentDocuments[section];
-      if (!documentToRemove)
+      const rawDocuments: unknown = profile.documents;
+      if (!isDocumentsMap(rawDocuments)) {
+        return res.status(500).json({ error: "Invalid documents data" });
+      }
+
+      const documentToRemove: unknown = rawDocuments[section];
+      if (!isDocumentRecord(documentToRemove)) {
         return res.status(404).json({ error: "Document not found" });
+      }
 
-      // Remove file from filesystem
       try {
         if (fs.existsSync(documentToRemove.path)) {
           fs.unlinkSync(documentToRemove.path);
         }
-      } catch (fileError) {
+      } catch (fileError: unknown) {
         console.error("Error removing file:", fileError);
       }
 
-      const updatedDocuments = { ...currentDocuments };
+      const updatedDocuments: DocumentsMap = { ...rawDocuments };
       delete updatedDocuments[section];
       await upsertProfile(userId, { documents: updatedDocuments });
 
       res.json({ ok: true });
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("Remove document error:", e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -215,9 +249,8 @@ router.delete(
 );
 
 // ─── Download Document ────────────────────────────────────────────────────────
-
 router.get(
-  "/documents/:section",
+  "/profile/documents/:section",
   requireAuth,
   async (req: AuthenticatedRequest, res) => {
     try {
@@ -225,18 +258,26 @@ router.get(
       const section = req.params.section;
 
       const profile = await UserProfile.findOne({ userId }).select("documents");
-      if (!profile?.documents)
+      if (!profile?.documents) {
         return res.status(404).json({ error: "No documents found" });
+      }
 
-      const documents = profile.documents as any;
-      const document = documents[section];
-      if (!document) return res.status(404).json({ error: "Document not found" });
+      const rawDocuments: unknown = profile.documents;
+      if (!isDocumentsMap(rawDocuments)) {
+        return res.status(500).json({ error: "Invalid documents data" });
+      }
 
-      if (!fs.existsSync(document.path))
+      const document: unknown = rawDocuments[section];
+      if (!isDocumentRecord(document)) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      if (!fs.existsSync(document.path)) {
         return res.status(404).json({ error: "File not found" });
+      }
 
       res.download(document.path, document.name);
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("Download document error:", e);
       res.status(500).json({ error: "Internal error" });
     }
