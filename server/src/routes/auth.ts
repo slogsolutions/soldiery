@@ -6,12 +6,39 @@ import UserProfile from "../models/UserProfile.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { AuthenticatedRequest } from "../types/index.js";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface JwtPayload {
+  userId: string;
+  role: string;
+}
+
+interface MonthlyRegistration {
+  month: string;
+  count: number;
+}
+
+interface RoleDistribution {
+  USER: number;
+  ADMIN: number;
+}
+
+interface RecentRegistration {
+  id: unknown;
+  username: string;
+  email: string;
+  role: string;
+  createdAt: Date;
+}
+
+// ─── Setup ────────────────────────────────────────────────────────────────────
+
 const router = Router();
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-function setAuthCookie(res: Response, payload: any) {
-  const secret = process.env.JWT_SECRET || "dev-secret";
+function setAuthCookie(res: Response, payload: JwtPayload): void {
+  const secret = process.env.JWT_SECRET ?? "dev-secret";
   const token = jwt.sign(payload, secret, { expiresIn: "7d" });
 
   const isProdLike =
@@ -32,14 +59,19 @@ function setAuthCookie(res: Response, payload: any) {
 // ─── Signup ───────────────────────────────────────────────────────────────────
 
 router.post("/signup", async (req: Request, res: Response) => {
-  const { username, email, password } = req.body;
-  if (!username || !email || !password)
+  const { username, email, password } = req.body as {
+    username?: string;
+    email?: string;
+    password?: string;
+  };
+
+  if (!username || !email || !password) {
     return res.status(400).json({ error: "Missing fields" });
+  }
 
   try {
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // Generate unique army number (format: ARMY-YYYY-XXXX)
     const year = new Date().getFullYear();
     const randomNum = Math.floor(Math.random() * 10000)
       .toString()
@@ -62,12 +94,16 @@ router.post("/signup", async (req: Request, res: Response) => {
       role: newUser.role,
     };
 
-    setAuthCookie(res, { userId: user.id, role: user.role });
+    setAuthCookie(res, { userId: String(user.id), role: user.role });
     return res.json(user);
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("Signup error:", e);
-    // MongoDB duplicate key error
-    if (e.code === 11000) {
+    if (
+      typeof e === "object" &&
+      e !== null &&
+      "code" in e &&
+      (e as { code: unknown }).code === 11000
+    ) {
       return res.status(409).json({ error: "Username or email already exists" });
     }
     return res.status(500).json({ error: "Internal error" });
@@ -77,7 +113,12 @@ router.post("/signup", async (req: Request, res: Response) => {
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 router.post("/login", async (req: Request, res: Response) => {
-  const { usernameOrEmail, password } = req.body;
+  console.log("BODY OF LOGIN :",req.body)
+  const { usernameOrEmail, password } = req.body as {
+    usernameOrEmail?: string;
+    password?: string;
+  };
+
   console.log("🔐 Login attempt:", {
     usernameOrEmail: usernameOrEmail?.substring(0, 20) + "...",
     hasPassword: !!password,
@@ -109,7 +150,8 @@ router.post("/login", async (req: Request, res: Response) => {
     }
 
     console.log("✅ Login successful, setting auth cookie");
-    setAuthCookie(res, { userId: user._id, role: user.role });
+    setAuthCookie(res, { userId: String(user._id), role: user.role });
+
     return res.json({
       id: user._id,
       armyNumber: user.armyNumber,
@@ -117,9 +159,10 @@ router.post("/login", async (req: Request, res: Response) => {
       email: user.email,
       role: user.role,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("❌ Login exception:", e);
-    return res.status(500).json({ error: "Internal error", details: e?.message });
+    const message = e instanceof Error ? e.message : "Unknown error";
+    return res.status(500).json({ error: "Internal error", details: message });
   }
 });
 
@@ -163,7 +206,7 @@ router.get("/me", requireAuth, async (req: AuthenticatedRequest, res: Response) 
       role: user.role,
     });
 
-    res.json({
+    return res.json({
       id: user._id,
       armyNumber: user.armyNumber,
       username: user.username,
@@ -171,9 +214,10 @@ router.get("/me", requireAuth, async (req: AuthenticatedRequest, res: Response) 
       role: user.role,
       createdAt: user.createdAt,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("❌ /api/me exception:", e);
-    return res.status(500).json({ error: "Internal error", details: e?.message });
+    const message = e instanceof Error ? e.message : "Unknown error";
+    return res.status(500).json({ error: "Internal error", details: message });
   }
 });
 
@@ -183,27 +227,32 @@ router.get(
   "/admin/stats",
   requireAuth,
   requireRole("ADMIN"),
-  async (req: AuthenticatedRequest, res: Response) => {
+  async (_req: AuthenticatedRequest, res: Response) => {
     try {
       const now = new Date();
       const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       const thisWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-      const [totalUsers, totalAdmins, totalRegularUsers, usersThisMonth, usersThisWeek, recentRegistrations] =
-        await Promise.all([
-          User.countDocuments(),
-          User.countDocuments({ role: "ADMIN" }),
-          User.countDocuments({ role: "USER" }),
-          User.countDocuments({ createdAt: { $gte: thisMonth } }),
-          User.countDocuments({ createdAt: { $gte: thisWeek } }),
-          User.find()
-            .select("username email role createdAt")
-            .sort({ createdAt: -1 })
-            .limit(10),
-        ]);
+      const [
+        totalUsers,
+        totalAdmins,
+        totalRegularUsers,
+        usersThisMonth,
+        usersThisWeek,
+        recentRegistrations,
+      ] = await Promise.all([
+        User.countDocuments(),
+        User.countDocuments({ role: "ADMIN" }),
+        User.countDocuments({ role: "USER" }),
+        User.countDocuments({ createdAt: { $gte: thisMonth } }),
+        User.countDocuments({ createdAt: { $gte: thisWeek } }),
+        User.find()
+          .select("username email role createdAt")
+          .sort({ createdAt: -1 })
+          .limit(10),
+      ]);
 
-      // Generate monthly registration data for last 12 months
-      const monthlyRegistrations = [];
+      const monthlyRegistrations: MonthlyRegistration[] = [];
       for (let i = 11; i >= 0; i--) {
         const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
         const nextMonthStart = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
@@ -221,26 +270,30 @@ router.get(
         });
       }
 
+      const roleDistribution: RoleDistribution = {
+        USER: totalRegularUsers,
+        ADMIN: totalAdmins,
+      };
+
+      const formattedRegistrations: RecentRegistration[] = recentRegistrations.map((u) => ({
+        id: u._id,
+        username: u.username,
+        email: u.email,
+        role: u.role,
+        createdAt: u.createdAt,
+      }));
+
       res.json({
         totalUsers,
         totalAdmins,
         totalRegularUsers,
         usersThisMonth,
         usersThisWeek,
-        recentRegistrations: recentRegistrations.map((u) => ({
-          id: u._id,
-          username: u.username,
-          email: u.email,
-          role: u.role,
-          createdAt: u.createdAt,
-        })),
-        roleDistribution: {
-          USER: totalRegularUsers,
-          ADMIN: totalAdmins,
-        },
+        recentRegistrations: formattedRegistrations,
+        roleDistribution,
         monthlyRegistrations,
       });
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("Admin stats error:", e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -253,7 +306,7 @@ router.get(
   "/admin/users",
   requireAuth,
   requireRole("ADMIN"),
-  async (req: AuthenticatedRequest, res: Response) => {
+  async (_req: AuthenticatedRequest, res: Response) => {
     try {
       const users = await User.find()
         .select("username email role createdAt")
@@ -263,9 +316,7 @@ router.get(
 
       const userIds = users.map((u) => u._id);
       const profiles = await UserProfile.find({ userId: { $in: userIds } });
-      const profileMap = new Map(
-        profiles.map((p) => [p.userId.toString(), p])
-      );
+      const profileMap = new Map(profiles.map((p) => [p.userId.toString(), p]));
 
       const transformedUsers = users.map((user) => {
         const profile = profileMap.get(user._id.toString());
@@ -291,8 +342,8 @@ router.get(
         };
       });
 
-      res.json(transformedUsers);
-    } catch (e) {
+      return res.json(transformedUsers);
+    } catch (e: unknown) {
       console.error("Get users error:", e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -309,14 +360,12 @@ router.get(
     try {
       const { userId } = req.params;
 
-      const user = await User.findById(userId).select(
-        "username email role createdAt"
-      );
+      const user = await User.findById(userId).select("username email role createdAt");
       if (!user) return res.status(404).json({ error: "User not found" });
 
       const profile = await UserProfile.findOne({ userId });
 
-      res.json({
+      return res.json({
         id: user._id,
         username: user.username,
         email: user.email,
@@ -336,7 +385,7 @@ router.get(
             }
           : null,
       });
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("Get user error:", e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -349,12 +398,13 @@ router.put(
   "/update-army-number",
   requireAuth,
   async (req: AuthenticatedRequest, res: Response) => {
-    const { armyNumber } = req.body;
-    if (!armyNumber)
+    const { armyNumber } = req.body as { armyNumber?: string };
+
+    if (!armyNumber) {
       return res.status(400).json({ error: "Army number is required" });
+    }
 
     try {
-      // Check if army number is already taken by another user
       const existingUser = await User.findOne({
         armyNumber,
         _id: { $ne: req.auth.userId },
@@ -374,14 +424,14 @@ router.put(
         return res.status(404).json({ error: "User not found" });
       }
 
-      res.json({
+      return res.json({
         id: updatedUser._id,
         armyNumber: updatedUser.armyNumber,
         username: updatedUser.username,
         email: updatedUser.email,
         role: updatedUser.role,
       });
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("Update army number error:", e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -394,16 +444,14 @@ router.get(
   "/admin/ping",
   requireAuth,
   requireRole("ADMIN"),
-  (_req: AuthenticatedRequest, res: Response) =>
-    res.json({ ok: true, scope: "admin" })
+  (_req: AuthenticatedRequest, res: Response) => res.json({ ok: true, scope: "admin" })
 );
 
 router.get(
   "/user/ping",
   requireAuth,
   requireRole("USER"),
-  (_req: AuthenticatedRequest, res: Response) =>
-    res.json({ ok: true, scope: "user" })
+  (_req: AuthenticatedRequest, res: Response) => res.json({ ok: true, scope: "user" })
 );
 
 export default router;
