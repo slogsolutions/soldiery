@@ -5,17 +5,75 @@ import RequestModel from "../models/Request.js";
 import UserProfile from "../models/UserProfile.js";
 import User from "../models/User.js";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type RequestType = "LEAVE" | "OUTPASS" | "SALARY" | "PROFILE_UPDATE";
+
+type AllowedSection = "personal" | "family" | "education" | "medical" | "others" | "leave" | "salary";
+
+interface LeaveEntry {
+  approvedAt: string;
+  [key: string]: unknown;
+}
+
+interface LeaveData {
+  requests?: LeaveEntry[];
+  outpasses?: LeaveEntry[];
+  [key: string]: unknown;
+}
+
+interface RequestPayload {
+  type: RequestType;
+  data: unknown;
+}
+
+interface RequestWithUserId {
+  userId: string;
+  leave?: Record<string, unknown>;
+  outpass?: Record<string, unknown>;
+  salary?: Record<string, unknown>;
+  section?: AllowedSection;
+  data?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+const SECTION_FIELD_MAP: Record<AllowedSection, string> = {
+  personal: "personalDetails",
+  family: "family",
+  education: "education",
+  medical: "medical",
+  others: "others",
+  leave: "leaveData",
+  salary: "salaryData",
+};
+
+// ─── Setup ────────────────────────────────────────────────────────────────────
+
 const router = Router();
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Type Guards ──────────────────────────────────────────────────────────────
 
-function isObject(value: any): value is Record<string, any> {
+function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isArray(value: any): value is any[] {
+function isArray(value: unknown): value is unknown[] {
   return Array.isArray(value);
 }
+
+function isLeaveArray(value: unknown): value is LeaveEntry[] {
+  return isArray(value);
+}
+
+function hasUserId(value: unknown): value is RequestWithUserId {
+  return isObject(value) && typeof value.userId === "string";
+}
+
+function isAllowedSection(value: unknown): value is AllowedSection {
+  return typeof value === "string" && value in SECTION_FIELD_MAP;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function ensureProfile(userId: string) {
   const existing = await UserProfile.findOne({ userId });
@@ -23,21 +81,27 @@ async function ensureProfile(userId: string) {
   return UserProfile.create({ userId });
 }
 
-async function applyApprovedRequest(reqRow: any) {
+async function applyApprovedRequest(reqRow: RequestPayload): Promise<void> {
   const { type, data } = reqRow;
-  const { userId } = data || {};
-  if (!userId) return;
+
+  if (!hasUserId(data)) return;
+  const { userId } = data;
 
   await ensureProfile(userId);
 
   switch (type) {
     case "LEAVE": {
       const profile = await UserProfile.findOne({ userId }).select("leaveData");
-      const leaveData = isObject(profile?.leaveData) ? profile.leaveData : {};
-      const requests = isArray((leaveData as any).requests)
-        ? (leaveData as any).requests
+      const leaveData: LeaveData = isObject(profile?.leaveData)
+        ? (profile.leaveData as LeaveData)
+        : {};
+      const requests: LeaveEntry[] = isLeaveArray(leaveData.requests)
+        ? leaveData.requests
         : [];
-      requests.push({ ...data.leave, approvedAt: new Date().toISOString() });
+
+      const leaveEntry = isObject(data.leave) ? data.leave : {};
+      requests.push({ ...leaveEntry, approvedAt: new Date().toISOString() });
+
       await UserProfile.findOneAndUpdate(
         { userId },
         { leaveData: { ...leaveData, requests }, updatedAt: new Date() },
@@ -47,11 +111,16 @@ async function applyApprovedRequest(reqRow: any) {
     }
     case "OUTPASS": {
       const profile = await UserProfile.findOne({ userId }).select("leaveData");
-      const leaveData = isObject(profile?.leaveData) ? profile.leaveData : {};
-      const outpasses = isArray((leaveData as any).outpasses)
-        ? (leaveData as any).outpasses
+      const leaveData: LeaveData = isObject(profile?.leaveData)
+        ? (profile.leaveData as LeaveData)
+        : {};
+      const outpasses: LeaveEntry[] = isLeaveArray(leaveData.outpasses)
+        ? leaveData.outpasses
         : [];
-      outpasses.push({ ...data.outpass, approvedAt: new Date().toISOString() });
+
+      const outpassEntry = isObject(data.outpass) ? data.outpass : {};
+      outpasses.push({ ...outpassEntry, approvedAt: new Date().toISOString() });
+
       await UserProfile.findOneAndUpdate(
         { userId },
         { leaveData: { ...leaveData, outpasses }, updatedAt: new Date() },
@@ -61,8 +130,11 @@ async function applyApprovedRequest(reqRow: any) {
     }
     case "SALARY": {
       const profile = await UserProfile.findOne({ userId }).select("salaryData");
-      const current = isObject(profile?.salaryData) ? profile.salaryData : {};
-      const safeSalary = isObject(data.salary) ? data.salary : {};
+      const current: Record<string, unknown> = isObject(profile?.salaryData)
+        ? (profile.salaryData as Record<string, unknown>)
+        : {};
+      const safeSalary: Record<string, unknown> = isObject(data.salary) ? data.salary : {};
+
       await UserProfile.findOneAndUpdate(
         { userId },
         { salaryData: { ...current, ...safeSalary }, updatedAt: new Date() },
@@ -71,18 +143,12 @@ async function applyApprovedRequest(reqRow: any) {
       break;
     }
     case "PROFILE_UPDATE": {
-      const { section, data: sectionData } = data;
-      const map: Record<string, string> = {
-        personal: "personalDetails",
-        family: "family",
-        education: "education",
-        medical: "medical",
-        others: "others",
-        leave: "leaveData",
-        salary: "salaryData",
-      };
-      const field = map[section];
-      if (!field) return;
+      const section = data.section;
+      const sectionData = data.data;
+
+      if (!isAllowedSection(section)) return;
+
+      const field = SECTION_FIELD_MAP[section];
       await UserProfile.findOneAndUpdate(
         { userId },
         { [field]: sectionData, updatedAt: new Date() },
@@ -103,10 +169,10 @@ router.get(
   requireRole("ADMIN"),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const status = req.query.status && String(req.query.status).toUpperCase();
-      const type = req.query.type && String(req.query.type).toUpperCase();
+      const status = req.query.status ? String(req.query.status).toUpperCase() : undefined;
+      const type = req.query.type ? String(req.query.type).toUpperCase() : undefined;
 
-      const filter: any = {};
+      const filter: Record<string, string> = {};
       if (status) filter.status = status;
       if (type) filter.type = type;
 
@@ -114,15 +180,14 @@ router.get(
         .populate("requesterId", "username email role")
         .sort({ createdAt: -1 });
 
-      // Collect all unique target user IDs from request data
       const userIds = [
         ...new Set(
           requests
-            .map((r: any) => {
-              const d = r.data as any;
-              return isObject(d) && typeof d.userId === "string" ? d.userId : null;
+            .map((r) => {
+              const d: unknown = (r as unknown as { data: unknown }).data;
+              return hasUserId(d) ? d.userId : null;
             })
-            .filter(Boolean)
+            .filter((id): id is string => id !== null)
         ),
       ];
 
@@ -135,29 +200,39 @@ router.get(
 
       const userMap = new Map(targetUsers.map((u) => [u._id.toString(), u]));
 
-      const transformed = requests.map((r: any) => {
-        const d = r.data as any;
-        const targetUser =
-          isObject(d) && typeof d.userId === "string"
-            ? userMap.get(d.userId) || null
-            : null;
+      const transformed = requests.map((r) => {
+        const row = r as unknown as {
+          _id: unknown;
+          type: string;
+          status: string;
+          data: unknown;
+          adminRemark?: string;
+          managerResponse?: string;
+          createdAt: Date;
+          updatedAt: Date;
+          requesterId: { _id: unknown; username: string; email: string; role: string } | null;
+        };
+
+        const d = row.data;
+        const targetUserId = hasUserId(d) ? d.userId : null;
+        const targetUser = targetUserId ? (userMap.get(targetUserId) ?? null) : null;
 
         return {
-          id: r._id,
-          type: r.type,
-          status: r.status,
-          data: r.data,
-          adminRemark: r.adminRemark,
-          managerResponse: r.managerResponse,
-          createdAt: r.createdAt,
-          updatedAt: r.updatedAt,
-          requesterId: r.requesterId?._id,
-          requester: r.requesterId
+          id: row._id,
+          type: row.type,
+          status: row.status,
+          data: row.data,
+          adminRemark: row.adminRemark,
+          managerResponse: row.managerResponse,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          requesterId: row.requesterId?._id,
+          requester: row.requesterId
             ? {
-                id: r.requesterId._id,
-                username: r.requesterId.username,
-                email: r.requesterId.email,
-                role: r.requesterId.role,
+                id: row.requesterId._id,
+                username: row.requesterId.username,
+                email: row.requesterId.email,
+                role: row.requesterId.role,
               }
             : null,
           targetUser: targetUser
@@ -173,7 +248,7 @@ router.get(
       });
 
       res.json({ ok: true, requests: transformed });
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("List requests error:", e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -191,8 +266,9 @@ router.post(
     try {
       const request = await RequestModel.findById(id);
       if (!request) return res.status(404).json({ error: "Request not found" });
-      if (request.status !== "PENDING")
+      if (request.status !== "PENDING") {
         return res.status(400).json({ error: "Request not pending" });
+      }
 
       const updated = await RequestModel.findByIdAndUpdate(
         id,
@@ -200,13 +276,14 @@ router.post(
         { new: true }
       );
 
-      // Apply profile updates in background
-      applyApprovedRequest(updated).catch((e) => {
-        console.error("Background profile update failed:", e);
-      });
+      if (updated) {
+        applyApprovedRequest(updated as unknown as RequestPayload).catch((e: unknown) => {
+          console.error("Background profile update failed:", e);
+        });
+      }
 
-      res.json({ ok: true, request: updated });
-    } catch (e) {
+      return res.json({ ok: true, request: updated });
+    } catch (e: unknown) {
       console.error("Approve request error:", e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -221,30 +298,34 @@ router.post(
   requireRole("ADMIN"),
   async (req: AuthenticatedRequest, res: Response) => {
     const { id } = req.params;
-    const { remark } = req.body || {};
+    const { remark } = (req.body ?? {}) as { remark?: unknown };
+
     try {
       const request = await RequestModel.findById(id);
       if (!request) return res.status(404).json({ error: "Request not found" });
-      if (request.status !== "PENDING")
+      if (request.status !== "PENDING") {
         return res.status(400).json({ error: "Request not pending" });
-      if (!remark || typeof remark !== "string" || remark.trim().length === 0)
+      }
+      if (!remark || typeof remark !== "string" || remark.trim().length === 0) {
         return res.status(400).json({ error: "Remark is required for rejection" });
+      }
+
+      const existingData: Record<string, unknown> = isObject(request.data)
+        ? (request.data as Record<string, unknown>)
+        : {};
 
       const updated = await RequestModel.findByIdAndUpdate(
         id,
         {
           status: "REJECTED",
           adminRemark: remark.trim(),
-          data: {
-            ...(isObject(request.data) ? request.data : {}),
-            rejectionReason: remark.trim(),
-          },
+          data: { ...existingData, rejectionReason: remark.trim() },
         },
         { new: true }
       );
 
-      res.json({ ok: true, request: updated });
-    } catch (e) {
+      return res.json({ ok: true, request: updated });
+    } catch (e: unknown) {
       console.error("Reject request error:", e);
       res.status(500).json({ error: "Internal error" });
     }
@@ -259,33 +340,40 @@ router.post(
   requireRole("MANAGER"),
   async (req: AuthenticatedRequest, res: Response) => {
     const { id } = req.params;
-    const { response, updatedData } = req.body || {};
+    const { response, updatedData } = (req.body ?? {}) as {
+      response?: unknown;
+      updatedData?: Record<string, unknown>;
+    };
+
     try {
       const request = await RequestModel.findById(id);
       if (!request) return res.status(404).json({ error: "Request not found" });
-      if (request.status !== "REJECTED")
+      if (request.status !== "REJECTED") {
         return res.status(400).json({ error: "Request is not rejected" });
-      if (request.requesterId.toString() !== req.auth.userId)
+      }
+      if (request.requesterId.toString() !== req.auth.userId) {
         return res.status(403).json({ error: "Not authorized to resubmit this request" });
-      if (!response || typeof response !== "string" || response.trim().length === 0)
+      }
+      if (!response || typeof response !== "string" || response.trim().length === 0) {
         return res.status(400).json({ error: "Response to admin remark is required" });
+      }
 
-      const newData = updatedData
-        ? { ...(isObject(request.data) ? request.data : {}), ...updatedData }
-        : request.data;
+      const existingData: Record<string, unknown> = isObject(request.data)
+        ? (request.data as Record<string, unknown>)
+        : {};
+
+      const newData: Record<string, unknown> = updatedData
+        ? { ...existingData, ...updatedData }
+        : existingData;
 
       const updated = await RequestModel.findByIdAndUpdate(
         id,
-        {
-          status: "PENDING",
-          managerResponse: response.trim(),
-          data: newData,
-        },
+        { status: "PENDING", managerResponse: response.trim(), data: newData },
         { new: true }
       );
 
-      res.json({ ok: true, request: updated });
-    } catch (e) {
+      return res.json({ ok: true, request: updated });
+    } catch (e: unknown) {
       console.error("Resubmit request error:", e);
       res.status(500).json({ error: "Internal error" });
     }
