@@ -1,9 +1,8 @@
 import { useState, useRef } from 'react'
 import { Button } from './ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
-import { Badge } from './ui/badge'
 import { useToast } from '@/hooks/use-toast'
-import { Upload, FileText, X, CheckCircle, AlertCircle } from 'lucide-react'
+import { Upload, FileText, X, CheckCircle, AlertCircle, Download } from 'lucide-react'
 
 interface DocumentUploadProps {
   section: string
@@ -14,26 +13,27 @@ interface DocumentUploadProps {
     uploadedAt: string
   } | null
   onDocumentRemove?: (section: string) => Promise<void>
+  onDocumentDownload?: (section: string) => Promise<void>
 }
 
 export function DocumentUpload({ 
   section, 
   onDocumentUpload, 
   existingDocument, 
-  onDocumentRemove 
+  onDocumentRemove,
+  onDocumentDownload
 }: DocumentUploadProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
-  const MAX_FILE_SIZE = 300 * 1024 // 300KB in bytes
+  const MAX_FILE_SIZE = 300 * 1024
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
-    // Validate file type
     if (file.type !== 'application/pdf') {
       toast({
         title: "Invalid file type",
@@ -43,7 +43,6 @@ export function DocumentUpload({
       return
     }
 
-    // Validate file size
     if (file.size > MAX_FILE_SIZE) {
       toast({
         title: "File too large",
@@ -102,6 +101,20 @@ export function DocumentUpload({
     }
   }
 
+  const handleDownload = async () => {
+    if (!onDocumentDownload) return
+
+    try {
+      await onDocumentDownload(section)
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to download document",
+        variant: "destructive",
+      })
+    }
+  }
+
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes'
     const k = 1024
@@ -134,17 +147,31 @@ export function DocumentUpload({
                   </div>
                 </div>
               </div>
-              {onDocumentRemove && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRemove}
-                  disabled={isUploading}
-                  className="text-destructive dark:text-destructive-foreground hover:opacity-80"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {onDocumentDownload && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDownload}
+                    disabled={isUploading}
+                    title="Download document"
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                )}
+                {onDocumentRemove && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRemove}
+                    disabled={isUploading}
+                    className="text-destructive dark:text-destructive-foreground hover:opacity-80"
+                    title="Remove document"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         ) : (
