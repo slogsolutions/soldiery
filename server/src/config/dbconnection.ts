@@ -6,7 +6,7 @@ const dbConnection = async (): Promise<void> => {
 
   try {
     await mongoose.connect(
-      process.env.DATABASE_URL || ""    );
+      process.env.DATABASE_URL  || ""    );
       
     console.log("Database connected successfully");
   } catch (error) {
