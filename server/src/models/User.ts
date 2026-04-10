@@ -1,48 +1,73 @@
-import mongoose, { Document, Schema } from "mongoose";
+import mongoose, { Schema, model, Document } from "mongoose";
+import  Jwt  from "jsonwebtoken";
+import bcrypt from "bcryptjs"
 
-export type Role = "USER" | "ADMIN" | "MANAGER";
+export type UserRole = "admin" | "manager" | "soldier";
 
 export interface IUser extends Document {
+  name: string;
+  role: UserRole;
   armyNumber?: string;
-  username: string;
-  email: string;
-  passwordHash: string;
-  role: Role;
-  createdAt: Date;
+  rank?: string;
+  unit?: string;
+  status?: "pending"| "active" | "on_leave" | "inactive";
+  password?: string;        
+  createdAt?: Date;
+  updatedAt?: Date;
+  getJWT(): string;
+  hasRole(role: UserRole | UserRole[]): boolean;
+  comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
-const UserSchema = new Schema<IUser>(
+const userSchema = new Schema<IUser>(
   {
-    armyNumber: {
-      type: String,
-      unique: true,
-      sparse: true, // allows multiple null values with unique index
-    },
-    username: {
-      type: String,
-      required: true,
-      unique: true,
-    },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-    },
-    passwordHash: {
-      type: String,
-      required: true,
-    },
+    name: { type: String, required: true },
     role: {
       type: String,
-      enum: ["USER", "ADMIN", "MANAGER"],
-      default: "USER",
+      enum: ["admin", "manager", "soldier"],
+      required: true,
     },
+    armyNumber: { type: String, unique: true, sparse: true },
+    rank: String,
+    unit: String,
+    status: {
+      type: String,
+      enum: ["pending","active", "on_leave", "inactive"],
+      default: "pending",
+    },
+    password :{ type: String, select: false },
   },
-  {
-    timestamps: { createdAt: "createdAt", updatedAt: false },
-  }
+  { timestamps: true }
 );
 
-const User = mongoose.model<IUser>("User", UserSchema);
+//Instance Methods---------
 
-export default User;
+// Generate JWT token
+userSchema.methods.getJWT = function(this: IUser): string {
+  const payload = {
+    id: this._id,
+    name: this.name,
+    role: this.role,
+    armyNumber: this.armyNumber,
+  };
+  return Jwt.sign(payload, process.env.JWT_SECRET!, {
+    expiresIn:"7d",
+  });
+};
+
+// Check if user has one of the given roles
+userSchema.methods.hasRole = function(this: IUser, roles: UserRole | UserRole[]): boolean {
+  const allowed = Array.isArray(roles) ? roles : [roles];
+  return allowed.includes(this.role);
+};
+
+// Compare password 
+
+userSchema.methods.comparePassword = async function(this: IUser, candidatePassword: string): Promise<boolean> {
+  if (!this.password) return false;
+  return bcrypt.compare(candidatePassword, this.password);
+};
+
+export const User =
+  mongoose.models.User ||
+  model<IUser>("User", userSchema);
