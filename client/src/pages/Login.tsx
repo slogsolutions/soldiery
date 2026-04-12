@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { useDispatch } from "react-redux";
 import api from "../api/axios";
+import { setAuth } from "../store/slices/authSlice";
+import type { AppDispatch } from "../store/store";
+import { API_ROUTES } from "@/utils/constant";
 
 interface LoginResponse {
   success: boolean;
@@ -14,17 +18,13 @@ interface LoginResponse {
     unit?: string;
     status: string;
   };
-  token: string;
 }
 
 const Login = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch<AppDispatch>();
 
-  const [form, setForm] = useState({
-    armyNumber: "",
-    password: "",
-  });
-
+  const [form, setForm] = useState({ armyNumber: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -38,41 +38,22 @@ const Login = () => {
     setError("");
 
     try {
-      const res = await api.post<LoginResponse>("/api/auth/login", form);
+      const res = await api.post<LoginResponse>(
+        `${API_ROUTES.AUTH}/login`,
+        form,
+      );
 
-      const { data, token } = res.data;
+      const { data } = res.data;
 
-      // store in localStorage
-      localStorage.setItem("token", token);
-      localStorage.setItem("user", JSON.stringify(data));
+      // save user + token (cookie is set inside setAuth)
+      dispatch(setAuth(data)); // token cookie already set by backend
 
       // redirect based on role
-      if (data.role === "manager") {
-        navigate("/manager/dashboard");
-      } else {
-        navigate("/soldier/dashboard");
-      }
+      navigate(
+        data.role === "manager" ? "/manager/dashboard" : "/soldier/dashboard",
+      );
     } catch (err: unknown) {
-      console.error("Login error:", err);
-
-      let errorMessage = "Login failed";
-
-      if (err && typeof err === "object") {
-        const error = err as {
-          response?: {
-            data?: { message?: string };
-          };
-          message?: string;
-        };
-
-        if (error.response?.data?.message) {
-          errorMessage = error.response.data.message;
-        } else if (error.message) {
-          errorMessage = error.message;
-        }
-      }
-
-      setError(errorMessage);
+      setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setLoading(false);
     }
@@ -81,14 +62,12 @@ const Login = () => {
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        {/* header */}
         <div className="text-center mb-8">
           <div className="text-5xl mb-4">🪖</div>
           <h1 className="text-3xl font-bold text-white">Army Task System</h1>
           <p className="text-gray-400 mt-2">Sign in to your account</p>
         </div>
 
-        {/* card */}
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
