@@ -1,7 +1,7 @@
 import { configureStore } from "@reduxjs/toolkit";
 import authReducer from "./slices/authSlice";
 import taskReducer from "./slices/taskSlice";
-import assignmentReducer from "./slices/taskSlice";
+import assignmentReducer from "./slices/assignmentSlice";
 import soldierReducer from "./slices/soldierSlice";
 
 export const store = configureStore({
