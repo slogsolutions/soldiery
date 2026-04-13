@@ -27,9 +27,8 @@ const Sidebar = () => {
   const handleLogout = async () => {
     try {
       await api.post("/auth/logout");
-    } catch (err:unknown) {
-        console.log("err in sidebar",err)
-      // ignore error, logout anyway
+    } catch (err: unknown) {
+      console.log("err in sidebar", err);
     } finally {
       dispatch(logout());
       navigate("/login");
@@ -37,52 +36,52 @@ const Sidebar = () => {
   };
 
   return (
-    <aside className="fixed top-0 left-0 h-full w-64 bg-gray-900 text-white flex flex-col z-50">
+    <aside className="fixed top-0 left-0 h-full w-64 bg-white/80 backdrop-blur-sm border-r border-gray-200 shadow-sm flex flex-col z-50 transition-all duration-300">
 
-      {/* user info */}
-      <div className="p-5 border-b border-gray-700">
+      {/* user info - hover subtle scale */}
+      <div className="p-5 border-b border-gray-100 transition-all duration-200 hover:bg-gray-50/50">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center font-bold text-sm flex-shrink-0">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 text-white flex items-center justify-center font-bold text-sm shadow-sm flex-shrink-0 transition-transform duration-200 hover:scale-105">
             {user?.name?.charAt(0).toUpperCase()}
           </div>
           <div className="overflow-hidden">
-            <p className="font-semibold text-sm truncate">{user?.name}</p>
-            <p className="text-xs text-gray-400 capitalize">{user?.role}</p>
+            <p className="font-semibold text-gray-800 text-sm truncate">{user?.name}</p>
+            <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
           </div>
         </div>
         {user?.armyNumber && (
-          <p className="text-xs text-gray-500 mt-2 ml-1">#{user.armyNumber}</p>
+          <p className="text-xs text-gray-400 mt-2 ml-1">#{user.armyNumber}</p>
         )}
         {user?.rank && (
-          <p className="text-xs text-gray-500 ml-1">{user.rank}</p>
+          <p className="text-xs text-gray-400 ml-1">{user.rank}</p>
         )}
       </div>
 
-      {/* nav links */}
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+      {/* nav links - dynamic hover effects */}
+      <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
         {links.map((link) => (
           <NavLink
             key={link.to}
             to={link.to}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
+              `flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
                 isActive
-                  ? "bg-green-600 text-white"
-                  : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                  ? "bg-gray-100 text-gray-900 shadow-inner"
+                  : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 hover:translate-x-1 hover:shadow-sm"
               }`
             }
           >
-            <span className="text-base">{link.icon}</span>
+            <span className="text-lg transition-transform duration-200 group-hover:scale-110">{link.icon}</span>
             <span>{link.label}</span>
           </NavLink>
         ))}
       </nav>
 
-      {/* logout */}
-      <div className="p-4 border-t border-gray-700">
+      {/* logout button - lift + colour shift */}
+      <div className="p-4 border-t border-gray-100">
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-gray-400 hover:bg-red-600 hover:text-white transition-all"
+          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-500 hover:bg-red-50 hover:text-red-600 transition-all duration-200 hover:scale-[1.02] active:scale-95"
         >
           <span>🚪</span>
           <span>Logout</span>
