@@ -134,12 +134,12 @@ const App = () => {
   useEffect(() => {
     // verify cookie on every page load and rehydrate user
     api
-      .get("/auth/me")
+      .get("/api/auth/me")
       .then((res) => dispatch(setAuth(res.data.data)))
       .catch(() => dispatch(logout()));
   }, [dispatch]);
 
-  // wait for /auth/me to finish before rendering any route
+  // wait for /api/auth/me to finish before rendering any route
   // prevents flash of wrong page on refresh
   if (isLoading) {
     return (
