@@ -1,26 +1,27 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../../store/store";
-import { setTasks, addTask, updateTask, deactivateTask, setTaskLoading, setTaskError } from "../../store/slices/taskSlice";
+import {
+  setTasks, addTask, updateTask, deactivateTask,
+  setTaskLoading, setTaskError,
+} from "../../store/slices/taskSlice";
+import type { Task } from "../../store/slices/taskSlice";
 import api from "../../api/axios";
 import { API_ROUTES } from "@/utils/constant";
 import Modal from "../../components/ui/Modal";
-import type { Task } from "../../store/slices/taskSlice";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface TaskFormData {
-  title: string;
-  description: string;
-}
-
-interface EditingTask {
-  _id: string;
-  title: string;
-  description?: string;
-}
-
+interface TaskFormData { title: string; description: string; }
+interface EditingTask { _id: string; title: string; description?: string; }
 const initialForm: TaskFormData = { title: "", description: "" };
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const extractError = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  return "Something went wrong";
+};
 
 // ─── Task Card ───────────────────────────────────────────────────────────────
 
@@ -45,13 +46,15 @@ const TaskCard = ({ task, onEdit, onDeactivate }: TaskCardProps) => (
     {task.description && (
       <p className="text-sm text-gray-500 mb-3 leading-relaxed">{task.description}</p>
     )}
-    <div className="flex items-center gap-1 mb-4">
-      <span className="text-xs text-gray-400">Created by</span>
-      <span className="text-xs text-gray-600 font-medium">{task.createdBy?.name ?? "—"}</span>
-      {task.createdBy?.rank && (
-        <span className="text-xs text-gray-400">({task.createdBy.rank})</span>
-      )}
-    </div>
+    {task.createdBy && (
+      <div className="flex items-center gap-1 mb-4">
+        <span className="text-xs text-gray-400">Created by</span>
+        <span className="text-xs text-gray-600 font-medium">{task.createdBy.name}</span>
+        {task.createdBy.rank && (
+          <span className="text-xs text-gray-400">({task.createdBy.rank})</span>
+        )}
+      </div>
+    )}
     <div className="flex gap-2">
       <button
         onClick={() => onEdit({ _id: task._id, title: task.title, description: task.description })}
@@ -76,21 +79,31 @@ interface TaskFormProps {
   onCancel: () => void;
   isEditing: boolean;
   loading: boolean;
+  error: string | null;
 }
 
-const TaskForm = ({ form, onChange, onSubmit, onCancel, isEditing, loading }: TaskFormProps) => (
+const TaskForm = ({ form, onChange, onSubmit, onCancel, isEditing, loading, error }: TaskFormProps) => (
   <form onSubmit={onSubmit} className="space-y-4">
+    {error && (
+      <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+        <p className="text-red-700 text-sm">{error}</p>
+      </div>
+    )}
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
-      <input type="text" value={form.title} onChange={(e) => onChange("title", e.target.value)}
-        required placeholder="e.g. Border Patrol"
+      <input
+        type="text" value={form.title} required
+        onChange={(e) => onChange("title", e.target.value)}
+        placeholder="e.g. Border Patrol"
         className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
       />
     </div>
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-      <textarea value={form.description} onChange={(e) => onChange("description", e.target.value)}
-        rows={3} placeholder="Optional — describe what this task involves..."
+      <textarea
+        value={form.description} rows={3}
+        onChange={(e) => onChange("description", e.target.value)}
+        placeholder="Optional — describe what this task involves..."
         className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
       />
     </div>
@@ -115,48 +128,62 @@ const ManagerTasks = () => {
   const [editingTask, setEditingTask] = useState<EditingTask | null>(null);
   const [form, setForm] = useState<TaskFormData>(initialForm);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      dispatch(setTaskLoading(true));
-      try {
-        const res = await api.get(`${API_ROUTES.MANAGER}/tasks`);
-        dispatch(setTasks(res.data.data));
-      } catch (err: unknown) {
-        dispatch(setTaskError(err instanceof Error ? err.message : "Failed to fetch tasks"));
-      }
-    };
-    load();
-  }, [dispatch]);
+  const fetchTasks = async () => {
+    dispatch(setTaskLoading(true));
+    try {
+      const res = await api.get<{ success: boolean; data: Task[] }>(
+        `${API_ROUTES.MANAGER}/tasks`
+      );
+      dispatch(setTasks(res.data.data));
+    } catch (err: unknown) {
+      dispatch(setTaskError(extractError(err)));
+    }
+  };
 
-  const openCreate = () => { setEditingTask(null); setForm(initialForm); setShowModal(true); };
+  useEffect(() => { fetchTasks(); }, []);
+
+  const openCreate = () => {
+    setEditingTask(null);
+    setForm(initialForm);
+    setFormError(null);
+    setShowModal(true);
+  };
+
   const openEdit = (task: EditingTask) => {
     setEditingTask(task);
     setForm({ title: task.title, description: task.description ?? "" });
+    setFormError(null);
     setShowModal(true);
   };
-  const closeModal = () => { setShowModal(false); setEditingTask(null); setForm(initialForm); setError(null); };
 
-  const handleFieldChange = (field: keyof TaskFormData, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingTask(null);
+    setForm(initialForm);
+    setFormError(null);
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSubmitting(true);
-    setError(null);
+    setFormError(null);
     try {
       if (editingTask) {
-        const res = await api.patch(`${API_ROUTES.MANAGER}/tasks/${editingTask._id}`, form);
+        const res = await api.patch<{ success: boolean; data: Task }>(
+          `${API_ROUTES.MANAGER}/tasks/${editingTask._id}`, form
+        );
         dispatch(updateTask(res.data.data));
       } else {
-        const res = await api.post(`${API_ROUTES.MANAGER}/tasks`, form);
+        const res = await api.post<{ success: boolean; data: Task }>(
+          `${API_ROUTES.MANAGER}/tasks`, form
+        );
         dispatch(addTask(res.data.data));
       }
       closeModal();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to save task");
+      setFormError(extractError(err));
     } finally {
       setSubmitting(false);
     }
@@ -168,7 +195,7 @@ const ManagerTasks = () => {
       await api.delete(`${API_ROUTES.MANAGER}/tasks/${id}`);
       dispatch(deactivateTask(id));
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to deactivate task");
+      alert(extractError(err));
     }
   };
 
@@ -177,6 +204,8 @@ const ManagerTasks = () => {
 
   return (
     <div className="space-y-6">
+
+      {/* header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Tasks</h1>
@@ -187,6 +216,7 @@ const ManagerTasks = () => {
         >+ New Task</button>
       </div>
 
+      {/* stats */}
       <div className="grid grid-cols-2 gap-4 max-w-xs">
         <div className="bg-green-50 border border-green-100 rounded-xl p-4">
           <p className="text-2xl font-bold text-green-700">{activeTasks.length}</p>
@@ -198,6 +228,7 @@ const ManagerTasks = () => {
         </div>
       </div>
 
+      {/* content */}
       {isLoading ? (
         <div className="flex items-center justify-center h-48 text-gray-400">
           <div className="text-center"><div className="text-3xl mb-2">📋</div><p>Loading tasks...</p></div>
@@ -241,11 +272,14 @@ const ManagerTasks = () => {
 
       {showModal && (
         <Modal title={editingTask ? "Edit Task" : "Create New Task"} onClose={closeModal}>
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>
-          )}
-          <TaskForm form={form} onChange={handleFieldChange} onSubmit={handleSubmit}
-            onCancel={closeModal} isEditing={editingTask !== null} loading={submitting}
+          <TaskForm
+            form={form}
+            onChange={(field, value) => setForm((prev) => ({ ...prev, [field]: value }))}
+            onSubmit={handleSubmit}
+            onCancel={closeModal}
+            isEditing={editingTask !== null}
+            loading={submitting}
+            error={formError}
           />
         </Modal>
       )}
