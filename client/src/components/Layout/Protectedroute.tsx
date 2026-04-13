@@ -9,6 +9,7 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) => {
   const { user } = useSelector((s: RootState) => s.auth);
+  console.log("Current User : ",user)
 
   // not logged in → go to login
   if (!user) {
