@@ -1,10 +1,7 @@
 import { baseURL } from "@/utils/baseUrl";
 import axios from "axios";
 
-
 const serverUrl = baseURL
-
-console.log("📡 Using backend URL:", serverUrl);
 
 const axiosInstance = axios.create({
   baseURL: serverUrl,
