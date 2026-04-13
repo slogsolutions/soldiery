@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../../store/store";
-import { setAssignments, addAssignment, updateAssignment, setAssignmentLoading, setAssignmentError } from "../../store/slices/assignmentSlice";
+import {
+  setAssignments, addAssignment, updateAssignment,
+  setAssignmentLoading, setAssignmentError,
+} from "../../store/slices/assignmentSlice";
+import type { Assignment } from "../../store/slices/assignmentSlice";
+import { setSoldiers, setSoldierLoading } from "../../store/slices/soldierSlice";
+import type { Soldier } from "../../store/slices/soldierSlice";
+import { setTasks, setTaskLoading } from "../../store/slices/taskSlice";
+import type { Task } from "../../store/slices/taskSlice";
 import api from "../../api/axios";
 import { API_ROUTES } from "@/utils/constant";
 import Badge from "../../components/ui/Badge";
@@ -9,60 +17,18 @@ import Modal from "../../components/ui/Modal";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type AssignmentStatus = "upcoming" | "active" | "pending_review" | "completed" | "rejected";
 type Priority = "low" | "medium" | "high";
-
-interface Assignment {
-  _id: string;
-  soldier: { _id: string; name: string; armyNumber: string };
-  task: { _id: string; title: string };
-  startTime: string;
-  endTime: string;
-  status: AssignmentStatus;
-  createdBy: "manager" | "soldier";
-  notes?: string;
-  priority?: Priority;
-  location?: string;
-}
-
-interface Soldier {
-  _id: string;
-  name: string;
-  armyNumber: string;
-}
-
-interface Task {
-  _id: string;
-  title: string;
-  isActive: boolean;
-}
+type AssignmentStatus = Assignment["status"];
 
 interface AssignFormData {
-  soldierId: string;
-  taskId: string;
-  startTime: string;
-  endTime: string;
-  notes: string;
-  priority: Priority;
-  location: string;
+  soldierId: string; taskId: string;
+  startTime: string; endTime: string;
+  notes: string; priority: Priority; location: string;
 }
 
 interface EditFormData {
-  notes: string;
-  priority: Priority;
-  location: string;
-  startTime: string;
-  endTime: string;
-}
-
-interface SelectedAssignment {
-  _id: string;
-  notes?: string;
-  priority?: Priority;
-  location?: string;
-  startTime: string;
-  endTime: string;
-  status: AssignmentStatus;
+  notes: string; priority: Priority; location: string;
+  startTime: string; endTime: string;
 }
 
 const initialAssignForm: AssignFormData = {
@@ -70,7 +36,7 @@ const initialAssignForm: AssignFormData = {
   notes: "", priority: "medium", location: "",
 };
 
-const STATUS_FILTERS = [
+const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: "", label: "All Status" },
   { value: "upcoming", label: "Upcoming" },
   { value: "active", label: "Active" },
@@ -81,43 +47,62 @@ const STATUS_FILTERS = [
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+const extractError = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  return "Something went wrong";
+};
+
 const formatDate = (iso: string) =>
-  new Date(iso).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  new Date(iso).toLocaleString("en-IN", {
+    day: "2-digit", month: "short",
+    hour: "2-digit", minute: "2-digit",
+  });
 
-const toInputDateTime = (iso: string) => new Date(iso).toISOString().slice(0, 16);
+const toInputDateTime = (iso: string) =>
+  new Date(iso).toISOString().slice(0, 16);
 
-// ─── Assign Form ─────────────────────────────────────────────────────────────
+// ─── Assign Form ──────────────────────────────────────────────────────────────
 
 interface AssignFormProps {
   form: AssignFormData;
   soldiers: Soldier[];
   tasks: Task[];
+  error: string | null;
+  submitting: boolean;
   onChange: <K extends keyof AssignFormData>(field: K, value: AssignFormData[K]) => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
-  submitting: boolean;
-  error: string | null;
 }
 
-const AssignForm = ({ form, soldiers, tasks, onChange, onSubmit, onCancel, submitting, error }: AssignFormProps) => (
+const AssignForm = ({ form, soldiers, tasks, error, submitting, onChange, onSubmit, onCancel }: AssignFormProps) => (
   <form onSubmit={onSubmit} className="space-y-4">
-    {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
+    {error && (
+      <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+        <p className="text-red-700 text-sm">{error}</p>
+      </div>
+    )}
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">Soldier *</label>
-      <select value={form.soldierId} onChange={(e) => onChange("soldierId", e.target.value)} required
+      <select value={form.soldierId} required
+        onChange={(e) => onChange("soldierId", e.target.value)}
         className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
       >
         <option value="">Select soldier</option>
-        {soldiers.map((s) => <option key={s._id} value={s._id}>{s.name} ({s.armyNumber})</option>)}
+        {soldiers.map((s) => (
+          <option key={s._id} value={s._id}>{s.name} ({s.armyNumber})</option>
+        ))}
       </select>
     </div>
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">Task *</label>
-      <select value={form.taskId} onChange={(e) => onChange("taskId", e.target.value)} required
+      <select value={form.taskId} required
+        onChange={(e) => onChange("taskId", e.target.value)}
         className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
       >
         <option value="">Select task</option>
-        {tasks.filter((t) => t.isActive).map((t) => <option key={t._id} value={t._id}>{t.title}</option>)}
+        {tasks.filter((t) => t.isActive).map((t) => (
+          <option key={t._id} value={t._id}>{t.title}</option>
+        ))}
       </select>
     </div>
     <div className="grid grid-cols-2 gap-3">
@@ -139,7 +124,8 @@ const AssignForm = ({ form, soldiers, tasks, onChange, onSubmit, onCancel, submi
     <div className="grid grid-cols-2 gap-3">
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-        <select value={form.priority} onChange={(e) => onChange("priority", e.target.value as Priority)}
+        <select value={form.priority}
+          onChange={(e) => onChange("priority", e.target.value as Priority)}
           className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
         >
           <option value="low">Low</option>
@@ -149,16 +135,16 @@ const AssignForm = ({ form, soldiers, tasks, onChange, onSubmit, onCancel, submi
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-        <input type="text" value={form.location} onChange={(e) => onChange("location", e.target.value)}
-          placeholder="e.g. Northern Gate"
+        <input type="text" value={form.location} placeholder="e.g. Northern Gate"
+          onChange={(e) => onChange("location", e.target.value)}
           className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
         />
       </div>
     </div>
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-      <textarea value={form.notes} onChange={(e) => onChange("notes", e.target.value)}
-        rows={2} placeholder="Additional instructions..."
+      <textarea value={form.notes} rows={2} placeholder="Additional instructions..."
+        onChange={(e) => onChange("notes", e.target.value)}
         className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
       />
     </div>
@@ -177,16 +163,20 @@ const AssignForm = ({ form, soldiers, tasks, onChange, onSubmit, onCancel, submi
 
 interface EditFormProps {
   form: EditFormData;
+  error: string | null;
+  submitting: boolean;
   onChange: <K extends keyof EditFormData>(field: K, value: EditFormData[K]) => void;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
-  submitting: boolean;
-  error: string | null;
 }
 
-const EditForm = ({ form, onChange, onSubmit, onCancel, submitting, error }: EditFormProps) => (
+const EditForm = ({ form, error, submitting, onChange, onSubmit, onCancel }: EditFormProps) => (
   <form onSubmit={onSubmit} className="space-y-4">
-    {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
+    {error && (
+      <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+        <p className="text-red-700 text-sm">{error}</p>
+      </div>
+    )}
     <div className="grid grid-cols-2 gap-3">
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
@@ -206,7 +196,8 @@ const EditForm = ({ form, onChange, onSubmit, onCancel, submitting, error }: Edi
     <div className="grid grid-cols-2 gap-3">
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-        <select value={form.priority} onChange={(e) => onChange("priority", e.target.value as Priority)}
+        <select value={form.priority}
+          onChange={(e) => onChange("priority", e.target.value as Priority)}
           className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
         >
           <option value="low">Low</option>
@@ -216,15 +207,16 @@ const EditForm = ({ form, onChange, onSubmit, onCancel, submitting, error }: Edi
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-        <input type="text" value={form.location} onChange={(e) => onChange("location", e.target.value)}
-          placeholder="e.g. Northern Gate"
+        <input type="text" value={form.location} placeholder="e.g. Northern Gate"
+          onChange={(e) => onChange("location", e.target.value)}
           className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
         />
       </div>
     </div>
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-      <textarea value={form.notes} onChange={(e) => onChange("notes", e.target.value)} rows={2}
+      <textarea value={form.notes} rows={2}
+        onChange={(e) => onChange("notes", e.target.value)}
         className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
       />
     </div>
@@ -244,75 +236,91 @@ const EditForm = ({ form, onChange, onSubmit, onCancel, submitting, error }: Edi
 const ManagerAssignments = () => {
   const dispatch = useDispatch<AppDispatch>();
   const { assignments, isLoading } = useSelector((s: RootState) => s.assignments);
-
-  // local state for soldiers/tasks dropdowns — no need to hit Redux store for these
-  const [soldiers, setSoldiers] = useState<Soldier[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const { soldiers } = useSelector((s: RootState) => s.soldiers);
+  const { tasks } = useSelector((s: RootState) => s.tasks);
 
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [selectedAssignment, setSelectedAssignment] = useState<SelectedAssignment | null>(null);
+  const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [assignForm, setAssignForm] = useState<AssignFormData>(initialAssignForm);
   const [editForm, setEditForm] = useState<EditFormData>({
     notes: "", priority: "medium", location: "", startTime: "", endTime: "",
   });
   const [submitting, setSubmitting] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
 
-  // load assignments
-  useEffect(() => {
-    const load = async () => {
-      dispatch(setAssignmentLoading(true));
-      try {
-        const query = statusFilter ? `?status=${statusFilter}` : "";
-        const res = await api.get(`${API_ROUTES.MANAGER}/assignments${query}`);
-        dispatch(setAssignments(res.data.data));
-      } catch (err: unknown) {
-        dispatch(setAssignmentError(err instanceof Error ? err.message : "Failed to fetch assignments"));
-      }
-    };
-    load();
-  }, [dispatch, statusFilter]);
-
-  // load soldiers + tasks for dropdowns once on mount
-  useEffect(() => {
-    const loadDropdowns = async () => {
-      try {
-        const [solRes, taskRes] = await Promise.all([
-          api.get(`${API_ROUTES.MANAGER}/soldiers?status=active`),
-          api.get(`${API_ROUTES.MANAGER}/tasks`),
-        ]);
-        setSoldiers(solRes.data.data);
-        setTasks(taskRes.data.data);
-      } catch {
-        // non-critical — forms will just show empty dropdowns
-      }
-    };
-    loadDropdowns();
-  }, []);
-
-  const handleAssignChange = <K extends keyof AssignFormData>(field: K, value: AssignFormData[K]) => {
-    setAssignForm((prev) => ({ ...prev, [field]: value }));
+  const fetchAssignments = async (filter: string) => {
+    dispatch(setAssignmentLoading(true));
+    try {
+      const query = filter ? `?status=${filter}` : "";
+      const res = await api.get<{ success: boolean; data: Assignment[] }>(
+        `${API_ROUTES.MANAGER}/assignments${query}`
+      );
+      dispatch(setAssignments(res.data.data));
+    } catch (err: unknown) {
+      dispatch(setAssignmentError(extractError(err)));
+    }
   };
+
+  const fetchSoldiers = async () => {
+    dispatch(setSoldierLoading(true));
+    try {
+      const res = await api.get<{ success: boolean; data: Soldier[] }>(
+        `${API_ROUTES.MANAGER}/soldiers?status=active`
+      );
+      dispatch(setSoldiers(res.data.data));
+    } catch (err: unknown) {
+      console.error(extractError(err));
+    }
+  };
+
+  const fetchTasks = async () => {
+    dispatch(setTaskLoading(true));
+    try {
+      const res = await api.get<{ success: boolean; data: Task[] }>(
+        `${API_ROUTES.MANAGER}/tasks`
+      );
+      dispatch(setTasks(res.data.data));
+    } catch (err: unknown) {
+      console.error(extractError(err));
+    }
+  };
+
+  useEffect(() => {
+    fetchAssignments(statusFilter);
+    fetchSoldiers();
+    fetchTasks();
+  }, [statusFilter]);
+
+  // ── assign handlers ──────────────────────────────────────────────────────
+
+  const handleAssignChange = <K extends keyof AssignFormData>(
+    field: K, value: AssignFormData[K]
+  ) => setAssignForm((prev) => ({ ...prev, [field]: value }));
 
   const handleAssignSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSubmitting(true);
-    setModalError(null);
+    setAssignError(null);
     try {
-      const res = await api.post(`${API_ROUTES.MANAGER}/assignments`, assignForm);
+      const res = await api.post<{ success: boolean; data: Assignment }>(
+        `${API_ROUTES.MANAGER}/assignments`, assignForm
+      );
       dispatch(addAssignment(res.data.data));
       setShowAssignModal(false);
       setAssignForm(initialAssignForm);
     } catch (err: unknown) {
-      setModalError(err instanceof Error ? err.message : "Failed to create assignment");
+      setAssignError(extractError(err));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const openEdit = (a: SelectedAssignment) => {
+  // ── edit handlers ────────────────────────────────────────────────────────
+
+  const openEdit = (a: Assignment) => {
     setSelectedAssignment(a);
     setEditForm({
       notes: a.notes ?? "",
@@ -321,71 +329,88 @@ const ManagerAssignments = () => {
       startTime: toInputDateTime(a.startTime),
       endTime: toInputDateTime(a.endTime),
     });
-    setModalError(null);
+    setEditError(null);
     setShowEditModal(true);
   };
 
-  const handleEditChange = <K extends keyof EditFormData>(field: K, value: EditFormData[K]) => {
-    setEditForm((prev) => ({ ...prev, [field]: value }));
-  };
+  const handleEditChange = <K extends keyof EditFormData>(
+    field: K, value: EditFormData[K]
+  ) => setEditForm((prev) => ({ ...prev, [field]: value }));
 
   const handleEditSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedAssignment) return;
     setSubmitting(true);
-    setModalError(null);
+    setEditError(null);
     try {
-      const res = await api.patch(`${API_ROUTES.MANAGER}/assignments/${selectedAssignment._id}`, editForm);
+      const res = await api.patch<{ success: boolean; data: Assignment }>(
+        `${API_ROUTES.MANAGER}/assignments/${selectedAssignment._id}`, editForm
+      );
       dispatch(updateAssignment(res.data.data));
       setShowEditModal(false);
       setSelectedAssignment(null);
     } catch (err: unknown) {
-      setModalError(err instanceof Error ? err.message : "Failed to update assignment");
+      setEditError(extractError(err));
     } finally {
       setSubmitting(false);
     }
   };
 
+  // ── approve / reject ─────────────────────────────────────────────────────
+
   const handleApprove = async (id: string) => {
     try {
-      const res = await api.patch(`${API_ROUTES.MANAGER}/assignments/${id}/approve`);
+      const res = await api.patch<{ success: boolean; data: Assignment }>(
+        `${API_ROUTES.MANAGER}/assignments/${id}/approve`
+      );
       dispatch(updateAssignment(res.data.data));
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to approve");
+      alert(extractError(err));
     }
   };
 
   const handleReject = async (id: string) => {
     if (!window.confirm("Reject this completion? Soldier will remain on duty.")) return;
     try {
-      const res = await api.patch(`${API_ROUTES.MANAGER}/assignments/${id}/reject`);
+      const res = await api.patch<{ success: boolean; data: Assignment }>(
+        `${API_ROUTES.MANAGER}/assignments/${id}/reject`
+      );
       dispatch(updateAssignment(res.data.data));
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to reject");
+      alert(extractError(err));
     }
   };
 
-  const pendingCount = assignments.filter((a: Assignment) => a.status === "pending_review").length;
+  const pendingCount = assignments.filter((a) => a.status === "pending_review").length;
+
+  const isEditable = (status: AssignmentStatus) =>
+    !["completed", "rejected"].includes(status);
 
   return (
     <div className="space-y-6">
+
+      {/* header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Assignments</h1>
           <p className="text-gray-500 text-sm mt-1">Assign tasks to soldiers and manage their progress</p>
         </div>
         <div className="flex gap-3 flex-wrap">
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+          <select value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
           >
-            {STATUS_FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+            {STATUS_FILTERS.map((f) => (
+              <option key={f.value} value={f.value}>{f.label}</option>
+            ))}
           </select>
-          <button onClick={() => { setModalError(null); setShowAssignModal(true); }}
+          <button onClick={() => { setAssignForm(initialAssignForm); setAssignError(null); setShowAssignModal(true); }}
             className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition-all"
           >+ Assign Task</button>
         </div>
       </div>
 
+      {/* pending review banner */}
       {pendingCount > 0 && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-3">
           <span className="text-orange-600 text-xl">📋</span>
@@ -395,6 +420,7 @@ const ManagerAssignments = () => {
         </div>
       )}
 
+      {/* table */}
       {isLoading ? (
         <div className="flex items-center justify-center h-48 text-gray-400">
           <div className="text-center"><div className="text-3xl mb-2">📌</div><p>Loading assignments...</p></div>
@@ -403,9 +429,6 @@ const ManagerAssignments = () => {
         <div className="flex flex-col items-center justify-center h-48 bg-white rounded-xl shadow text-gray-400">
           <div className="text-3xl mb-2">📌</div>
           <p className="text-sm">No assignments found</p>
-          <button onClick={() => setShowAssignModal(true)}
-            className="mt-3 text-green-600 text-sm font-medium hover:underline"
-          >Assign a task</button>
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow overflow-hidden">
@@ -423,8 +446,12 @@ const ManagerAssignments = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {assignments.map((a: Assignment) => (
-                  <tr key={a._id} className={`hover:bg-gray-50 transition-colors ${a.status === "pending_review" ? "bg-orange-50" : ""}`}>
+                {assignments.map((a) => (
+                  <tr key={a._id}
+                    className={`hover:bg-gray-50 transition-colors ${
+                      a.status === "pending_review" ? "bg-orange-50" : ""
+                    }`}
+                  >
                     <td className="px-6 py-4">
                       <p className="font-medium text-gray-800">{a.soldier?.name}</p>
                       <p className="text-xs text-gray-400 font-mono">{a.soldier?.armyNumber}</p>
@@ -432,17 +459,25 @@ const ManagerAssignments = () => {
                     <td className="px-6 py-4">
                       <p className="text-gray-700 font-medium">{a.task?.title}</p>
                       {a.location && <p className="text-xs text-gray-400 mt-0.5">📍 {a.location}</p>}
-                      {a.notes && <p className="text-xs text-gray-400 mt-0.5 truncate max-w-32">📝 {a.notes}</p>}
+                      {a.notes && (
+                        <p className="text-xs text-gray-400 mt-0.5 truncate max-w-32">📝 {a.notes}</p>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-gray-500 text-xs">
                       <p>{formatDate(a.startTime)}</p>
                       <p className="text-gray-400">→ {formatDate(a.endTime)}</p>
                     </td>
-                    <td className="px-6 py-4">{a.priority && <Badge status={a.priority} />}</td>
+                    <td className="px-6 py-4">
+                      {a.priority && <Badge status={a.priority} />}
+                    </td>
                     <td className="px-6 py-4">
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        a.createdBy === "manager" ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-600"
-                      }`}>{a.createdBy}</span>
+                        a.createdBy === "manager"
+                          ? "bg-purple-100 text-purple-700"
+                          : "bg-gray-100 text-gray-600"
+                      }`}>
+                        {a.createdBy}
+                      </span>
                     </td>
                     <td className="px-6 py-4"><Badge status={a.status} /></td>
                     <td className="px-6 py-4">
@@ -450,20 +485,16 @@ const ManagerAssignments = () => {
                         {a.status === "pending_review" && (
                           <>
                             <button onClick={() => handleApprove(a._id)}
-                              className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-700 font-medium transition-all"
+                              className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-700 font-medium"
                             >Approve</button>
                             <button onClick={() => handleReject(a._id)}
-                              className="bg-red-500 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-red-600 font-medium transition-all"
+                              className="bg-red-500 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-red-600 font-medium"
                             >Reject</button>
                           </>
                         )}
-                        {!["completed", "rejected"].includes(a.status) && (
-                          <button onClick={() => openEdit({
-                            _id: a._id, notes: a.notes, priority: a.priority,
-                            location: a.location, startTime: a.startTime,
-                            endTime: a.endTime, status: a.status,
-                          })}
-                            className="border border-gray-300 text-gray-600 text-xs px-3 py-1.5 rounded-lg hover:bg-gray-50 font-medium transition-all"
+                        {isEditable(a.status) && (
+                          <button onClick={() => openEdit(a)}
+                            className="border border-gray-300 text-gray-600 text-xs px-3 py-1.5 rounded-lg hover:bg-gray-50 font-medium"
                           >Edit</button>
                         )}
                       </div>
@@ -481,19 +512,27 @@ const ManagerAssignments = () => {
         </div>
       )}
 
+      {/* assign modal */}
       {showAssignModal && (
         <Modal title="Assign Task to Soldier" onClose={() => setShowAssignModal(false)}>
-          <AssignForm form={assignForm} soldiers={soldiers} tasks={tasks}
-            onChange={handleAssignChange} onSubmit={handleAssignSubmit}
-            onCancel={() => setShowAssignModal(false)} submitting={submitting} error={modalError}
+          <AssignForm
+            form={assignForm} soldiers={soldiers} tasks={tasks}
+            error={assignError} submitting={submitting}
+            onChange={handleAssignChange}
+            onSubmit={handleAssignSubmit}
+            onCancel={() => setShowAssignModal(false)}
           />
         </Modal>
       )}
 
+      {/* edit modal */}
       {showEditModal && selectedAssignment && (
         <Modal title="Edit Assignment" onClose={() => setShowEditModal(false)}>
-          <EditForm form={editForm} onChange={handleEditChange} onSubmit={handleEditSubmit}
-            onCancel={() => setShowEditModal(false)} submitting={submitting} error={modalError}
+          <EditForm
+            form={editForm} error={editError} submitting={submitting}
+            onChange={handleEditChange}
+            onSubmit={handleEditSubmit}
+            onCancel={() => setShowEditModal(false)}
           />
         </Modal>
       )}
