@@ -209,7 +209,6 @@ const SoldierDashboard = () => {
                 <div
                   key={a._id}
                   className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100 transition-all duration-200 hover:bg-gray-100 hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
-                  onClick={() => navigate(`/soldier/assignments/${a._id}`)}
                 >
                   <div>
                     <p className="font-semibold text-gray-800">{a.task?.title}</p>
