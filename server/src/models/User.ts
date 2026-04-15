@@ -10,7 +10,8 @@ export interface IUser extends Document {
   armyNumber?: string;
   rank?: string;
   unit?: string;
-  status?: "pending"| "active" | "on_leave" | "inactive";
+  manager?:mongoose.Types.ObjectId;
+  status?: "active"  | "inactive";
   password?: string;        
   createdAt?: Date;
   updatedAt?: Date;
@@ -30,12 +31,21 @@ const userSchema = new Schema<IUser>(
     armyNumber: { type: String, unique: true, sparse: true },
     rank: String,
     unit: String,
+
+      manager: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: function (this: IUser) {
+        return this.role === "soldier"; // only soldiers must have manager
+      },
+    },
+    
     status: {
       type: String,
       enum: ["pending","active", "on_leave", "inactive"],
       default: "pending",
     },
-    password :{ type: String, select: false },
+    password :{ type: String, required:true, select: false },
   },
   { timestamps: true }
 );
