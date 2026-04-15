@@ -1,57 +1,8 @@
 import { Request, Response } from "express";
 import { User } from "../models/User.js";
 import { AuthRequest } from "../middlewares/auth.js";
-import bcrypt from "bcryptjs";
 
-// ─── Register (soldier only) ───────────────────────────────────────────────
-export const register = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { name, password, armyNumber, rank, unit } = req.body;
-
-    if (!name || !password || !armyNumber) {
-      res.status(400).json({
-        success: false,
-        message: "Name, password and army number are required",
-      });
-      return;
-    }
-
-    // check duplicate army number
-    const existing = await User.findOne({ armyNumber });
-    if (existing) {
-      res.status(409).json({
-        success: false,
-        message: "Army number already registered",
-      });
-      return;
-    }
-
-    const hashPass = await bcrypt.hash(password, 10);
-
-    await User.create({
-      name,
-      password: hashPass,
-      armyNumber,
-      rank,
-      unit,
-      role: "soldier",
-      status: "pending",
-    });
-
-    // fetch created user without password
-    const newUser = await User.findOne({ armyNumber }).select("-password");
-
-    res.status(201).json({
-      success: true,
-      message: "Registration successful. Wait for manager approval before logging in.",
-      data: newUser,
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
-// ─── Login (manager + soldier) ─────────────────────────────────────────────
+// ─── Login
 export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     const { armyNumber, password } = req.body;
@@ -123,7 +74,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         unit: user.unit,
         status: user.status,
       },
-      token,
     });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
