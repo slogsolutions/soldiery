@@ -8,6 +8,7 @@ import dbConnection from "./config/dbconnection.js";
 import authRoutes from "./routes/auth.js";
 import managerRoutes from "./routes/manager.js";
 import soldierRoutes from "./routes/soldier.js";
+import adminRoutes from "./routes/admin.js"
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.use(cookieParser());
 app.use("/api/auth", authRoutes);
 app.use("/api/manager", managerRoutes);
 app.use("/api/soldier", soldierRoutes);
+app.use("/api/admin",adminRoutes)
 
 // health check
 app.get("/api/health", (_req, res) => {
