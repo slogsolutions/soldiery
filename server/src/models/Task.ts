@@ -4,6 +4,7 @@ export interface ITask extends Document {
   title: string;
   description?: string;
   createdBy: Types.ObjectId;
+  manager : Types.ObjectId;
   isActive?: Boolean;
   createdAt:Date;
   updatedAt:Date;
@@ -18,6 +19,13 @@ const taskSchema = new Schema<ITask>(
       ref: "User",
       required: true,
     },
+
+    manager:{
+      type:Schema.Types.ObjectId,
+      ref:"User",
+      required:true,
+    },
+    
     isActive: {
       type: Boolean,
       default: true,
