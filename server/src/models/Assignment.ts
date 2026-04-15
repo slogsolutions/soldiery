@@ -1,34 +1,21 @@
-import mongoose, {
-  Document,
-  Schema,
-  model,
-  Types,
-  StringQueryTypeCasting,
-} from "mongoose";
-
-export type AssignmentStatus =
-  | "upcoming"
-  | "active"
-  | "pending_review"
-  | "completed"
-  | "rejected";
+import mongoose, { Schema, model, Types } from "mongoose";
 
 export type AssignmentPriority = "low" | "medium" | "high";
 
-export interface IAssignment extends Document {
+export interface IAssignment {
   soldier: Types.ObjectId;
   task: Types.ObjectId;
+  manager: Types.ObjectId;
+
   startTime: Date;
   endTime: Date;
-  status: AssignmentStatus;
-  createdBy: "manager" | "soldier";
-  // manager extra fields
-  assignedBy?: Types.ObjectId;
+
   notes?: string;
   priority?: AssignmentPriority;
   location?: string;
-  createdAt: Date;
-  updatedAt: Date;
+
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 const assignmentSchema = new Schema<IAssignment>(
@@ -38,50 +25,56 @@ const assignmentSchema = new Schema<IAssignment>(
       ref: "User",
       required: true,
     },
+
     task: {
       type: Schema.Types.ObjectId,
       ref: "Task",
       required: true,
     },
+
+    manager: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+
     startTime: {
       type: Date,
       required: true,
     },
+
     endTime: {
       type: Date,
       required: true,
+      validate: {
+        validator: function (this: any, value: Date) {
+          return value > this.startTime;
+        },
+        message: "End time must be after start time",
+      },
     },
-    status: {
-      type: String,
-      enum: ["upcoming", "active", "pending_review", "completed", "rejected"],
-      default: "upcoming",
-    },
-    createdBy: {
-      type: String,
-      enum: ["manager", "soldier"],
-      required: true,
-    },
-    assignedBy: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: false,
-    },
+
     notes: {
       type: String,
       trim: true,
     },
+
     priority: {
       type: String,
       enum: ["low", "medium", "high"],
       default: "medium",
     },
+
     location: {
       type: String,
       trim: true,
     },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
+
+// 🔥 Index for performance (important for queries)
+assignmentSchema.index({ manager: 1, soldier: 1, startTime: 1 });
 
 export const Assignment =
   mongoose.models.Assignment ||
