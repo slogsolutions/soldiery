@@ -3,27 +3,78 @@ import { AuthRequest } from "../middlewares/auth";
 import { User } from "../models/User";
 import { Task } from "../models/Task";
 import { Assignment } from "../models/Assignment";
+import { Leave } from "../models/Leave";
+import bcrypt from "bcryptjs";
 
-// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────
 // SOLDIER MANAGEMENT
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 
-// GET /api/manager/soldiers
-export const getAllSoldiers = async (req: AuthRequest, res: Response): Promise<void> => {
+
+// ─── Create Soldier ─────────────────────────────────────────
+export const createSoldier = async (req: AuthRequest, res: Response) => {
+  try {
+    const { name, password, armyNumber, rank, unit } = req.body;
+
+    if (!name || !password || !armyNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Name, password and armyNumber are required",
+      });
+    }
+
+    // check duplicate army number
+    const existing = await User.findOne({ armyNumber });
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: "Army number already exists",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const soldier = await User.create({
+      name,
+      password: hashedPassword,
+      armyNumber,
+      rank,
+      unit,
+      role: "soldier",
+      manager: req.user!.id, // 🔥 important
+      status: "active",
+    });
+
+    const data = await User.findById(soldier._id).select("-password");
+
+    res.status(201).json({
+      success: true,
+      message: "Soldier created successfully",
+      data,
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+export const getAllSoldiers = async (req: AuthRequest, res: Response) => {
   try {
     const { status } = req.query;
-    const filter: any = { role: "soldier" };
-    if (status) filter.status = status;
 
-    const soldiers = await User.find(filter).select("-password");
+    const soldiers = await User.find({
+      role: "soldier",
+      manager: req.user!.id,
+      ...(status && { status }),
+    }).select("-password");
 
     const now = new Date();
 
-    // attach free/busy status to each soldier
     const soldiersWithStatus = await Promise.all(
       soldiers.map(async (soldier) => {
         const activeAssignment = await Assignment.findOne({
           soldier: soldier._id,
+          manager: req.user!.id,
           startTime: { $lte: now },
           endTime: { $gte: now },
           status: { $in: ["active", "pending_review"] },
@@ -39,24 +90,26 @@ export const getAllSoldiers = async (req: AuthRequest, res: Response): Promise<v
 
     res.status(200).json({ success: true, data: soldiersWithStatus });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// GET /api/manager/soldiers/:id
-export const getSoldierById = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getSoldierById = async (req: AuthRequest, res: Response) => {
   try {
     const soldier = await User.findOne({
       _id: req.params.id,
       role: "soldier",
+      manager: req.user!.id,
     }).select("-password");
 
     if (!soldier) {
-      res.status(404).json({ success: false, message: "Soldier not found" });
-      return;
+      return res.status(404).json({ message: "Soldier not found" });
     }
 
-    const assignments = await Assignment.find({ soldier: soldier._id })
+    const assignments = await Assignment.find({
+      soldier: soldier._id,
+      manager: req.user!.id,
+    })
       .populate("task", "title description")
       .sort({ createdAt: -1 });
 
@@ -65,235 +118,149 @@ export const getSoldierById = async (req: AuthRequest, res: Response): Promise<v
       data: { soldier, assignments },
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// PATCH /api/manager/soldiers/:id/approve
-export const approveSoldier = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const soldier = await User.findOne({
-      _id: req.params.id,
-      role: "soldier",
-    });
-
-    if (!soldier) {
-      res.status(404).json({ success: false, message: "Soldier not found" });
-      return;
-    }
-
-    if (soldier.status !== ("pending" as any)) {
-      res.status(400).json({
-        success: false,
-        message: "Soldier is not in pending status",
-      });
-      return;
-    }
-
-    soldier.status = "active";
-    await soldier.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Soldier approved successfully",
-      data: soldier,
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
-// PATCH /api/manager/soldiers/:id/status
-export const updateSoldierStatus = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { status } = req.body;
-    const allowed = ["active", "on_leave", "inactive"];
-
-    if (!allowed.includes(status)) {
-      res.status(400).json({
-        success: false,
-        message: `Status must be one of: ${allowed.join(", ")}`,
-      });
-      return;
-    }
-
-    const soldier = await User.findOneAndUpdate(
-      { _id: req.params.id, role: "soldier" },
-      { status },
-      { new: true }
-    ).select("-password");
-
-    if (!soldier) {
-      res.status(404).json({ success: false, message: "Soldier not found" });
-      return;
-    }
-
-    res.status(200).json({ success: true, data: soldier });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 // TASK MANAGEMENT
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 
-// POST /api/manager/tasks
-export const createTask = async (req: AuthRequest, res: Response): Promise<void> => {
+export const createTask = async (req: AuthRequest, res: Response) => {
   try {
     const { title, description } = req.body;
 
     if (!title) {
-      res.status(400).json({ success: false, message: "Title is required" });
-      return;
+      return res.status(400).json({ message: "Title is required" });
     }
 
     const task = await Task.create({
       title,
       description,
-      createdBy: req.user?.id,
+      createdBy: req.user!.id,
+      manager: req.user!.id,
     });
 
     res.status(201).json({ success: true, data: task });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// GET /api/manager/tasks
-export const getAllTasks = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getAllTasks = async (req: AuthRequest, res: Response) => {
   try {
-    const tasks = await Task.find()
+    const tasks = await Task.find({
+      manager: req.user!.id,
+      isActive: true,
+    })
       .populate("createdBy", "name rank")
       .sort({ createdAt: -1 });
 
     res.status(200).json({ success: true, data: tasks });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// PATCH /api/manager/tasks/:id
-export const updateTask = async (req: AuthRequest, res: Response): Promise<void> => {
+export const updateTask = async (req: AuthRequest, res: Response) => {
   try {
     const { title, description, isActive } = req.body;
 
-    const task = await Task.findByIdAndUpdate(
-      req.params.id,
+    const task = await Task.findOneAndUpdate(
+      { _id: req.params.id, manager: req.user!.id },
       { title, description, isActive },
       { new: true, runValidators: true }
     );
 
     if (!task) {
-      res.status(404).json({ success: false, message: "Task not found" });
-      return;
+      return res.status(404).json({ message: "Task not found" });
     }
 
     res.status(200).json({ success: true, data: task });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// DELETE /api/manager/tasks/:id  (soft delete — just deactivates)
-export const deleteTask = async (req: AuthRequest, res: Response): Promise<void> => {
+export const deleteTask = async (req: AuthRequest, res: Response) => {
   try {
-    const task = await Task.findByIdAndUpdate(
-      req.params.id,
+    const task = await Task.findOneAndUpdate(
+      { _id: req.params.id, manager: req.user!.id },
       { isActive: false },
       { new: true }
     );
 
     if (!task) {
-      res.status(404).json({ success: false, message: "Task not found" });
-      return;
+      return res.status(404).json({ message: "Task not found" });
     }
 
-    res.status(200).json({
-      success: true,
-      message: "Task deactivated successfully",
-    });
+    res.status(200).json({ success: true, message: "Task deactivated" });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 // ASSIGNMENT MANAGEMENT
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 
-// POST /api/manager/assignments
-export const createAssignment = async (req: AuthRequest, res: Response): Promise<void> => {
+export const createAssignment = async (req: AuthRequest, res: Response) => {
   try {
-    const { soldierId, taskId, startTime, endTime, notes, priority, location } = req.body;
+    const { soldierId, taskId, startTime, endTime, notes, priority, location } =
+      req.body;
 
     if (!soldierId || !taskId || !startTime || !endTime) {
-      res.status(400).json({
-        success: false,
-        message: "soldierId, taskId, startTime and endTime are required",
-      });
-      return;
+      return res.status(400).json({ message: "Missing required fields" });
     }
 
-    if (new Date(endTime) <= new Date(startTime)) {
-      res.status(400).json({
-        success: false,
-        message: "End time must be after start time",
-      });
-      return;
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+
+    if (end <= start) {
+      return res.status(400).json({ message: "Invalid time range" });
     }
 
-    // check soldier exists and is active
-    const soldier = await User.findOne({ _id: soldierId, role: "soldier", status: "active" });
-    if (!soldier) {
-      res.status(404).json({
-        success: false,
-        message: "Active soldier not found",
-      });
-      return;
+    const soldier = await User.findOne({
+      _id: soldierId,
+      role: "soldier",
+      status: "active",
+    });
+
+    if (!soldier || soldier.manager?.toString() !== req.user!.id) {
+      return res.status(403).json({ message: "Invalid soldier" });
     }
 
-    // check task exists and is active
-    const task = await Task.findOne({ _id: taskId, isActive: true });
+    const task = await Task.findOne({
+      _id: taskId,
+      isActive: true,
+      manager: req.user!.id,
+    });
+
     if (!task) {
-      res.status(404).json({ success: false, message: "Active task not found" });
-      return;
+      return res.status(404).json({ message: "Task not found" });
     }
 
-    // check for overlapping assignment
+    // 🔥 overlap check (NO STATUS)
     const overlap = await Assignment.findOne({
       soldier: soldierId,
-      status: { $in: ["upcoming", "active", "pending_review"] },
+      manager: req.user!.id,
       $or: [
-        { startTime: { $lt: new Date(endTime), $gte: new Date(startTime) } },
-        { endTime: { $gt: new Date(startTime), $lte: new Date(endTime) } },
-        {
-          startTime: { $lte: new Date(startTime) },
-          endTime: { $gte: new Date(endTime) },
-        },
+        { startTime: { $lt: end, $gte: start } },
+        { endTime: { $gt: start, $lte: end } },
+        { startTime: { $lte: start }, endTime: { $gte: end } },
       ],
     });
 
     if (overlap) {
-      res.status(409).json({
-        success: false,
-        message: "Soldier already has an overlapping assignment in this time window",
-      });
-      return;
+      return res.status(409).json({ message: "Overlapping assignment" });
     }
-
-    const now = new Date();
-    const start = new Date(startTime);
-    const status = start > now ? "upcoming" : "active";
 
     const assignment = await Assignment.create({
       soldier: soldierId,
       task: taskId,
+      manager: req.user!.id,
       startTime: start,
-      endTime: new Date(endTime),
-      status,
-      createdBy: "manager",
-      assignedBy: req.user?.id,
+      endTime: end,
       notes,
       priority,
       location,
@@ -301,194 +268,130 @@ export const createAssignment = async (req: AuthRequest, res: Response): Promise
 
     const populated = await assignment.populate([
       { path: "soldier", select: "name rank armyNumber" },
-      { path: "task", select: "title description" },
-      { path: "assignedBy", select: "name rank" },
+      { path: "task", select: "title" },
     ]);
 
     res.status(201).json({ success: true, data: populated });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// GET /api/manager/assignments
-export const getAllAssignments = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { status, soldierId } = req.query;
-    const filter: any = {};
-    if (status) filter.status = status;
-    if (soldierId) filter.soldier = soldierId;
+const getStatus = (start: Date, end: Date) => {
+  const now = new Date();
+  if (now < start) return "upcoming";
+  if (now >= start && now <= end) return "active";
+  return "completed";
+};
 
-    const assignments = await Assignment.find(filter)
-      .populate("soldier", "name rank armyNumber unit")
-      .populate("task", "title description")
-      .populate("assignedBy", "name rank")
+
+export const getAllAssignments = async (req: AuthRequest,res: Response) => {
+  try {
+    const { soldierId } = req.query;
+
+    const assignments = await Assignment.find({
+      manager: req.user!.id,
+      ...(soldierId && { soldier: soldierId }),
+    })
+      .populate("soldier", "name rank armyNumber")
+      .populate("task", "title")
       .sort({ createdAt: -1 });
 
-    res.status(200).json({ success: true, data: assignments });
+    const result = assignments.map((a) => ({
+      ...a.toObject(),
+      status: getStatus(a.startTime, a.endTime),
+    }));
+
+    res.status(200).json({ success: true, data: result });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// GET /api/manager/assignments/:id
-export const getAssignmentById = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getAssignmentById = async (req: AuthRequest, res: Response) => {
   try {
-    const assignment = await Assignment.findById(req.params.id)
-      .populate("soldier", "name rank armyNumber unit")
-      .populate("task", "title description")
-      .populate("assignedBy", "name rank");
+    const assignment = await Assignment.findOne({
+      _id: req.params.id,
+      manager: req.user!.id,
+    })
+      .populate("soldier", "name rank")
+      .populate("task", "title");
 
     if (!assignment) {
-      res.status(404).json({ success: false, message: "Assignment not found" });
-      return;
+      return res.status(404).json({ message: "Assignment not found" });
     }
 
-    res.status(200).json({ success: true, data: assignment });
+    const result = {
+      ...assignment.toObject(),
+      status: getStatus(assignment.startTime, assignment.endTime),
+    };
+
+    res.status(200).json({ success: true, data: result });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// PATCH /api/manager/assignments/:id
-export const updateAssignment = async (req: AuthRequest, res: Response): Promise<void> => {
+export const updateAssignment = async (req: AuthRequest, res: Response) => {
   try {
-    const { notes, priority, location, startTime, endTime } = req.body;
+    const assignment = await Assignment.findOne({
+      _id: req.params.id,
+      manager: req.user!.id,
+    });
 
-    const assignment = await Assignment.findById(req.params.id);
     if (!assignment) {
-      res.status(404).json({ success: false, message: "Assignment not found" });
-      return;
+      return res.status(404).json({ message: "Assignment not found" });
     }
 
-    if (["completed", "rejected"].includes(assignment.status)) {
-      res.status(400).json({
-        success: false,
-        message: "Cannot edit a completed or rejected assignment",
-      });
-      return;
-    }
+    const { startTime, endTime, notes, priority, location } = req.body;
 
+    if (startTime) assignment.startTime = new Date(startTime);
+    if (endTime) assignment.endTime = new Date(endTime);
     if (notes !== undefined) assignment.notes = notes;
     if (priority !== undefined) assignment.priority = priority;
     if (location !== undefined) assignment.location = location;
-    if (startTime !== undefined) assignment.startTime = new Date(startTime);
-    if (endTime !== undefined) assignment.endTime = new Date(endTime);
+
+    // 🔥 validate time again
+    if (assignment.endTime <= assignment.startTime) {
+      return res.status(400).json({ message: "Invalid time range" });
+    }
 
     await assignment.save();
 
     res.status(200).json({ success: true, data: assignment });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-// PATCH /api/manager/assignments/:id/approve
-export const approveAssignment = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const assignment = await Assignment.findById(req.params.id);
-
-    if (!assignment) {
-      res.status(404).json({ success: false, message: "Assignment not found" });
-      return;
-    }
-
-    if (assignment.status !== "pending_review") {
-      res.status(400).json({
-        success: false,
-        message: "Only assignments in pending_review can be approved",
-      });
-      return;
-    }
-
-    assignment.status = "completed";
-    await assignment.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Assignment marked as completed",
-      data: assignment,
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
-// PATCH /api/manager/assignments/:id/reject
-export const rejectAssignment = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const assignment = await Assignment.findById(req.params.id);
-
-    if (!assignment) {
-      res.status(404).json({ success: false, message: "Assignment not found" });
-      return;
-    }
-
-    if (assignment.status !== "pending_review") {
-      res.status(400).json({
-        success: false,
-        message: "Only assignments in pending_review can be rejected",
-      });
-      return;
-    }
-
-    assignment.status = "rejected";
-    await assignment.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Assignment rejected, soldier remains on duty",
-      data: assignment,
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 // DASHBOARD
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 
-// GET /api/manager/dashboard
-export const getDashboard = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getDashboard = async (req: AuthRequest, res: Response) => {
   try {
     const now = new Date();
 
-    const allSoldiers = await User.find({ role: "soldier", status: "active" });
-    const total = allSoldiers.length;
+    const soldiers = await User.find({
+      role: "soldier",
+      manager: req.user!.id,
+      status: "active",
+    });
 
-    // find all active assignments right now
     const activeAssignments = await Assignment.find({
+      manager: req.user!.id,
       startTime: { $lte: now },
       endTime: { $gte: now },
       status: { $in: ["active", "pending_review"] },
-    }).populate("task", "title");
+    });
 
-    const busySoldierIds = new Set(
+    const busyIds = new Set(
       activeAssignments.map((a) => a.soldier.toString())
     );
 
-    const busy = busySoldierIds.size;
+    const busy = busyIds.size;
+    const total = soldiers.length;
     const free = total - busy;
-
-    // breakdown by task for detailed pie chart
-    const taskBreakdown: Record<string, number> = {};
-    activeAssignments.forEach((a) => {
-      const taskTitle = (a.task as any)?.title || "Unknown";
-      taskBreakdown[taskTitle] = (taskBreakdown[taskTitle] || 0) + 1;
-    });
-
-    // on leave count
-    const onLeave = await User.countDocuments({
-      role: "soldier",
-      status: "on_leave",
-    });
-
-    // pending approval count
-    const pendingApproval = await User.countDocuments({
-      role: "soldier",
-      status: "pending",
-    });
 
     res.status(200).json({
       success: true,
@@ -496,22 +399,181 @@ export const getDashboard = async (req: AuthRequest, res: Response): Promise<voi
         total,
         free,
         busy,
-        onLeave,
-        pendingApproval,
-        // simple pie chart data
-        pieChart: [
-          { label: "Free", value: free, color: "#0F6E56" },
-          { label: "Busy", value: busy, color: "#185FA5" },
-          { label: "On Leave", value: onLeave, color: "#854F0B" },
-        ],
-        // detailed breakdown by task
-        taskBreakdown: Object.entries(taskBreakdown).map(([task, count]) => ({
-          task,
-          count,
-        })),
       },
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+//Leave Management
+
+// get all leaves of soldiers(manager unit) 
+export const getManagerLeaves = async (req: AuthRequest, res: Response) => {
+  try {
+    const leaves = await Leave.find({
+      manager: req.user!.id,
+    })
+      .populate("soldier", "name rank armyNumber")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      data: leaves,
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// approve leave
+export const approveLeaveByManager = async (req: AuthRequest,res: Response) => {
+  try {
+    const leave = await Leave.findOne({
+      _id: req.params.id,
+      manager: req.user!.id,
+    });
+
+    if (!leave) {
+      return res.status(404).json({ message: "Leave not found" });
+    }
+
+    if (leave.status !== "pending") {
+      return res.status(400).json({
+        message: "Only pending leaves can be approved",
+      });
+    }
+
+    leave.status = "approved";
+    leave.managerId = req.user!.id;
+
+    await leave.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Leave approved by manager",
+      data: leave,
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// reject leave
+export const rejectLeaveByManager =  async (req:AuthRequest,res:Response)=>{
+
+  try {
+    const leave = await Leave.findOne({
+      _id:req.params.id,
+      manager:req.user!.id,
+
+    })
+
+    if(!leave){
+      return res.status(404).json({message:"Leave not found"})
+    }
+
+    if(leave.status !== "pending"){
+      return res.status(400).json({message:"Only pending request can be reject can be reject"})
+    }
+    
+    leave.status = "rejected"
+    leave.managerId = req.user!.id
+
+    await leave.save()
+
+    res.status(200).json({
+      success:true,
+      message:"Leave rejeceted by manager",
+      data: leave,
+    })
+    
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+//Edit leave
+export const editLeaveByManager = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const { finalDays, managerNote } = req.body;
+
+    const leave = await Leave.findOne({
+      _id: req.params.id,
+      manager: req.user!.id,
+    });
+
+    if (!leave) {
+      return res.status(404).json({ message: "Leave not found" });
+    }
+
+    if (leave.status !== "pending") {
+      return res.status(400).json({
+        message: "Only pending leaves can be edited",
+      });
+    }
+if (finalDays !== undefined) {
+  if (finalDays <= 0) {
+    return res.status(400).json({
+      message: "finalDays must be greater than 0",
+    });
+  }
+  leave.finalDays = finalDays;
+}
+
+    if (managerNote !== undefined) {
+      leave.managerNote = managerNote;
+    }
+
+    await leave.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Leave updated by manager",
+      data: leave,
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+// send leave to admin 
+export const sendLeaveToAdmin = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const leave = await Leave.findOne({
+      _id: req.params.id,
+      manager: req.user!.id,
+    });
+
+    if (!leave) {
+      return res.status(404).json({ message: "Leave not found" });
+    }
+
+    if (leave.status !== "pending") {
+      return res.status(400).json({
+        message: "Only pending leaves can be sent to admin",
+      });
+    }
+
+    leave.status = "approved_by_manager";
+    leave.managerId = req.user!.id;
+
+    await leave.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Leave sent to admin for final approval",
+      data: leave,
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
   }
 };
