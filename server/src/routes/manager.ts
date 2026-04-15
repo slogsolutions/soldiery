@@ -1,21 +1,28 @@
 import { Router } from "express";
 import { protect, restrictTo } from "../middlewares/auth";
 import {
+  createSoldier,
   getAllSoldiers,
   getSoldierById,
-  approveSoldier,
-  updateSoldierStatus,
+
   createTask,
   getAllTasks,
   updateTask,
   deleteTask,
+
   createAssignment,
   getAllAssignments,
   getAssignmentById,
   updateAssignment,
-  approveAssignment,
-  rejectAssignment,
+
   getDashboard,
+
+  // leave
+  getManagerLeaves,
+  approveLeaveByManager,
+  rejectLeaveByManager,
+  editLeaveByManager,
+  sendLeaveToAdmin,
 } from "../controllers/manager";
 
 const router = Router();
@@ -27,10 +34,9 @@ router.use(protect, restrictTo("manager"));
 router.get("/dashboard", getDashboard);
 
 // soldier management
+router.post("/soldiers",createSoldier)
 router.get("/soldiers", getAllSoldiers);
 router.get("/soldiers/:id", getSoldierById);
-router.patch("/soldiers/:id/approve", approveSoldier);
-router.patch("/soldiers/:id/status", updateSoldierStatus);
 
 // task management
 router.post("/tasks", createTask);
@@ -43,7 +49,12 @@ router.post("/assignments", createAssignment);
 router.get("/assignments", getAllAssignments);
 router.get("/assignments/:id", getAssignmentById);
 router.patch("/assignments/:id", updateAssignment);
-router.patch("/assignments/:id/approve", approveAssignment);
-router.patch("/assignments/:id/reject", rejectAssignment);
+
+//leave management
+router.get("/leaves", getManagerLeaves);
+router.patch("/leaves/:id/edit", editLeaveByManager);
+router.patch("/leaves/:id/approve", approveLeaveByManager);
+router.patch("/leaves/:id/reject", rejectLeaveByManager);
+router.patch("/leaves/:id/send-to-admin", sendLeaveToAdmin);
 
 export default router;
