@@ -65,7 +65,7 @@ export const getAllSoldiers = async (req: AuthRequest, res: Response) => {
     const soldiers = await User.find({
       role: "soldier",
       manager: req.user!.id,
-      ...(status && { status }),
+      status: status || "active",
     }).select("-password");
 
     const now = new Date();
@@ -74,10 +74,8 @@ export const getAllSoldiers = async (req: AuthRequest, res: Response) => {
       soldiers.map(async (soldier) => {
         const activeAssignment = await Assignment.findOne({
           soldier: soldier._id,
-          manager: req.user!.id,
           startTime: { $lte: now },
           endTime: { $gte: now },
-          status: { $in: ["active", "pending_review"] },
         }).populate("task", "title");
 
         return {
@@ -264,6 +262,7 @@ export const createAssignment = async (req: AuthRequest, res: Response) => {
       notes,
       priority,
       location,
+      status: "active",
     });
 
     const populated = await assignment.populate([
@@ -374,15 +373,14 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
 
     const soldiers = await User.find({
       role: "soldier",
-      manager: req.user!.id,
       status: "active",
+      manager: req.user!.id,
     });
 
     const activeAssignments = await Assignment.find({
-      manager: req.user!.id,
       startTime: { $lte: now },
       endTime: { $gte: now },
-      status: { $in: ["active", "pending_review"] },
+      manager: req.user!.id,
     });
 
     const busyIds = new Set(
@@ -412,15 +410,20 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
 // get all leaves of soldiers(manager unit) 
 export const getManagerLeaves = async (req: AuthRequest, res: Response) => {
   try {
-    const leaves = await Leave.find({
-      manager: req.user!.id,
-    })
-      .populate("soldier", "name rank armyNumber")
+    const leaves = await Leave.find({})
+      .populate({
+        path: "soldier",
+        match: { manager: req.user!.id },
+        select: "name rank armyNumber"
+      })
       .sort({ createdAt: -1 });
+
+    // Filter out leaves where soldier is null (not belonging to this manager)
+    const filteredLeaves = leaves.filter(leave => leave.soldier);
 
     res.status(200).json({
       success: true,
-      data: leaves,
+      data: filteredLeaves,
     });
   } catch (err: any) {
     res.status(500).json({ message: err.message });

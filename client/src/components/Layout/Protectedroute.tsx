@@ -4,7 +4,7 @@ import type { RootState } from "../../store/store";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  allowedRoles?: ("manager" | "soldier")[];
+  allowedRoles?: ( "admin" | "manager" | "soldier")[];
 }
 
 const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) => {

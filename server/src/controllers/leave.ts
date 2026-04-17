@@ -293,10 +293,59 @@ export const adminApproveLeave = async (
     leave.adminId = req.user!.id;
 
     await leave.save();
+    await leave.populate("soldier", "name rank armyNumber");
+    await leave.populate("managerId", "name");
 
     res.status(200).json({
       success: true,
       message: "Leave approved by admin",
+      data: leave,
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Edit leave days (admin)
+export const adminEditLeave = async (
+  req: AuthRequest,
+  res: Response
+) => {
+  try {
+    const { finalDays } = req.body;
+
+    const leave = await Leave.findById(req.params.id);
+
+    if (!leave) {
+      return res.status(404).json({ message: "Leave not found" });
+    }
+
+    if (leave.status !== "approved_by_manager") {
+      return res.status(400).json({
+        message: "Only leaves pending admin approval can be edited",
+      });
+    }
+
+    if (finalDays === undefined) {
+      return res.status(400).json({ message: "finalDays is required" });
+    }
+
+    if (typeof finalDays !== "number" || finalDays <= 0) {
+      return res.status(400).json({
+        message: "finalDays must be a positive number",
+      });
+    }
+
+    leave.finalDays = finalDays;
+    leave.adminId = req.user!.id;
+
+    await leave.save();
+    await leave.populate("soldier", "name rank armyNumber");
+    await leave.populate("managerId", "name");
+
+    res.status(200).json({
+      success: true,
+      message: "Leave duration updated by admin",
       data: leave,
     });
   } catch (err: any) {
@@ -332,6 +381,8 @@ export const adminRejectLeave = async (
     }
 
     await leave.save();
+    await leave.populate("soldier", "name rank armyNumber");
+    await leave.populate("managerId", "name");
 
     res.status(200).json({
       success: true,

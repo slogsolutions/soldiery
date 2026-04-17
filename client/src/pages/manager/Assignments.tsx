@@ -45,6 +45,12 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: "rejected", label: "Rejected" },
 ];
 
+const PRIORITY_OPTIONS: { value: Priority; label: string; accent: string }[] = [
+  { value: "low", label: "Low", accent: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20" },
+  { value: "medium", label: "Medium", accent: "text-amber-500 bg-amber-500/10 border-amber-500/20" },
+  { value: "high", label: "High", accent: "text-red-500 bg-red-500/10 border-red-500/20" },
+];
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const extractError = (err: unknown): string => {
@@ -58,8 +64,11 @@ const formatDate = (iso: string) =>
     hour: "2-digit", minute: "2-digit",
   });
 
-const toInputDateTime = (iso: string) =>
-  new Date(iso).toISOString().slice(0, 16);
+const toInputDateTime = (iso: string) => {
+  const date = new Date(iso);
+  const pad = (value: number) => value.toString().padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
 
 // ─── Assign Form ──────────────────────────────────────────────────────────────
 
@@ -123,15 +132,19 @@ const AssignForm = ({ form, soldiers, tasks, error, submitting, onChange, onSubm
     </div>
     <div className="grid grid-cols-2 gap-3">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-        <select value={form.priority}
-          onChange={(e) => onChange("priority", e.target.value as Priority)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
-        >
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-        </select>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Set Priority</label>
+        <div className="grid grid-cols-3 gap-2">
+          {PRIORITY_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange("priority", option.value)}
+              className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-all ${option.accent} ${form.priority === option.value ? "border-opacity-100 shadow-lg" : "border-opacity-50 hover:border-opacity-100"}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
@@ -195,15 +208,19 @@ const EditForm = ({ form, error, submitting, onChange, onSubmit, onCancel }: Edi
     </div>
     <div className="grid grid-cols-2 gap-3">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-        <select value={form.priority}
-          onChange={(e) => onChange("priority", e.target.value as Priority)}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
-        >
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-        </select>
+        <label className="block text-sm font-medium text-gray-700 mb-2">Set Priority</label>
+        <div className="grid grid-cols-3 gap-2">
+          {PRIORITY_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange("priority", option.value)}
+              className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-all ${option.accent} ${form.priority === option.value ? "border-opacity-100 shadow-lg" : "border-opacity-50 hover:border-opacity-100"}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>

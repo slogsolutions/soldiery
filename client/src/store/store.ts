@@ -3,6 +3,7 @@ import authReducer from "./slices/authSlice";
 import taskReducer from "./slices/taskSlice";
 import assignmentReducer from "./slices/assignmentSlice";
 import soldierReducer from "./slices/soldierSlice";
+import leaveReducer from "./slices/leaveSlice";
 
 export const store = configureStore({
   reducer: {
@@ -10,6 +11,7 @@ export const store = configureStore({
     tasks: taskReducer,
     assignments: assignmentReducer,
     soldiers: soldierReducer,
+    leaves: leaveReducer,
   },
 });
 

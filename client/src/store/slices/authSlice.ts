@@ -1,43 +1,64 @@
 import { createSlice } from "@reduxjs/toolkit";
 import type { PayloadAction } from "@reduxjs/toolkit";
 
-interface User {
+export interface User {
   id: string;
   name: string;
-  role: "manager" | "soldier";
   armyNumber: string;
   rank?: string;
   unit?: string;
-  status: string;
+  role: "admin" | "manager" | "soldier";
+  manager?: string;
+  status?: "active" | "inactive";
 }
 
 interface AuthState {
   user: User | null;
-  isLoading:boolean;
-  token:string | null;
+  token: string | null;
+  isLoading: boolean;
+  error: string | null;
 }
 
 const initialState: AuthState = {
-  user: null, 
-  isLoading:true,
-  token:null
+  user: null,
+  token: localStorage.getItem("token") ?? null,
+  isLoading: false,
+  error: null,
 };
 
 const authSlice = createSlice({
   name: "auth",
   initialState,
   reducers: {
-    setAuth: (state, action: PayloadAction<User>) => {
-      state.user = action.payload;
+    setLoading: (state, action: PayloadAction<boolean>) => {
+      state.isLoading = action.payload;
+      if (action.payload) state.error = null;
+    },
+    setUser: (state, action: PayloadAction<{ user: User; token: string }>) => {
+      state.user = action.payload.user;
+      state.token = action.payload.token;
+      state.isLoading = false;
+      state.error = null;
+      localStorage.setItem("token", action.payload.token);
+    },
+    setError: (state, action: PayloadAction<string>) => {
+      state.error = action.payload;
       state.isLoading = false;
     },
-
+    clearError: (state) => {
+      state.error = null;
+    },
     logout: (state) => {
       state.user = null;
+      state.token = null;
+      state.error = null;
       state.isLoading = false;
+      localStorage.removeItem("token");
     },
   },
 });
 
-export const { setAuth, logout } = authSlice.actions;
+export const { setUser, setLoading, setError, clearError, logout } =
+  authSlice.actions;
+
 export default authSlice.reducer;

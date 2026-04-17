@@ -1,28 +1,36 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createBrowserRouter, RouterProvider, Navigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "./store/store";
 import api from "./api/axios";
-import { setAuth, logout } from "./store/slices/authSlice";
+import { setUser, logout } from "./store/slices/authSlice";
 
 // auth pages
 import Login from "./pages/Login";
-import Register from "./pages/Register";
 
 // layout
 import ProtectedRoute from "./components/Layout/Protectedroute";
 import Layout from "./components/Layout/Layout";
+import AdminLayout from "./components/Layout/AdminLayout";
+
+//admin pages
+import AdminDashboard from "./pages/admin/AdminDashboard"
+import RegisterManager from "./pages/admin/RegisterManager";
+import SoldierDetail from "./pages/admin/SoldierDetail";
+import AssignTask from "./pages/admin/AssignTask";
 
 // manager pages
 import ManagerDashboard from "./pages/manager/Dashboard";
 import ManagerSoldiers from "./pages/manager/Soldiers";
 import ManagerTasks from "./pages/manager/Tasks";
-import ManagerAssignments from "./pages/manager/Assignments";
+import ManagerLeaves from "./pages/manager/Leave";
+import RegisterSoldier from "./pages/manager/RegisterSoldier";
 
 // soldier pages
 import SoldierDashboard from "./pages/soldier/Dashboard";
-import SoldierTasks from "./pages/soldier/Tasks";
-import SoldierAssignments from "./pages/soldier/Assignments";
+
+// admin pages
+import AdminLeaves from "./pages/admin/Leaves";
 
 // ─── Router ────────────────────────────────────────────────────────────────
 
@@ -33,16 +41,79 @@ const router = createBrowserRouter([
     path: "/login",
     element: <Login />,
   },
-  {
-    path: "/register",
-    element: <Register />,
-  },
 
   // ── default redirect ───────────────────────────────────────────────────
   {
     path: "/",
     element: <Navigate to="/login" replace />,
   },
+
+  // ── admin routes ───────────────────────────────────────────────────────
+  {
+    path: "/admin/dashboard",
+    element: (
+      <ProtectedRoute allowedRoles={["admin"]}>
+        <AdminLayout>
+          <AdminDashboard />
+        </AdminLayout>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    // Admin registers a new manager
+    path: "/admin/register-manager",
+    element: (
+      <ProtectedRoute allowedRoles={["admin"]}>
+        <AdminLayout>
+          <RegisterManager />
+        </AdminLayout>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    // Admin views a specific manager's dashboard
+    path: "/admin/manager/:id",
+    element: (
+      <ProtectedRoute allowedRoles={["admin"]}>
+        <AdminLayout>
+          <ManagerDashboard />
+        </AdminLayout>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    // Admin views a specific soldier's profile
+    path: "/admin/soldier/:id",
+    element: (
+      <ProtectedRoute allowedRoles={["admin"]}>
+        <AdminLayout>
+          <SoldierDetail />
+        </AdminLayout>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    // Admin assigns a task to a soldier
+    path: "/admin/assign-task/:id",
+    element: (
+      <ProtectedRoute allowedRoles={["admin"]}>
+        <AdminLayout>
+          <AssignTask />
+        </AdminLayout>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/admin/leaves",
+    element: (
+      <ProtectedRoute allowedRoles={["admin"]}>
+        <AdminLayout>
+          <AdminLeaves />
+        </AdminLayout>
+      </ProtectedRoute>
+    ),
+  },
+
 
   // ── manager routes ─────────────────────────────────────────────────────
   {
@@ -51,6 +122,16 @@ const router = createBrowserRouter([
       <ProtectedRoute allowedRoles={["manager"]}>
         <Layout>
           <ManagerDashboard />
+        </Layout>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/manager/RegisterSoldier",
+    element: (
+      <ProtectedRoute allowedRoles={["manager"]}>
+        <Layout>
+          <RegisterSoldier />
         </Layout>
       </ProtectedRoute>
     ),
@@ -76,11 +157,25 @@ const router = createBrowserRouter([
     ),
   },
   {
-    path: "/manager/assignments",
+    path: "/manager/assign-task/:id",
     element: (
       <ProtectedRoute allowedRoles={["manager"]}>
         <Layout>
-          <ManagerAssignments />
+          <AssignTask />
+        </Layout>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/manager/assignments",
+    element: <Navigate to="/manager/tasks" replace />,
+  },
+  {
+    path: "/manager/leaves",
+    element: (
+      <ProtectedRoute allowedRoles={["manager"]}>
+        <Layout>
+          <ManagerLeaves />
         </Layout>
       </ProtectedRoute>
     ),
@@ -97,26 +192,10 @@ const router = createBrowserRouter([
       </ProtectedRoute>
     ),
   },
-  {
-    path: "/soldier/tasks",
-    element: (
-      <ProtectedRoute allowedRoles={["soldier"]}>
-        <Layout>
-          <SoldierTasks />
-        </Layout>
-      </ProtectedRoute>
-    ),
-  },
-  {
-    path: "/soldier/assignments",
-    element: (
-      <ProtectedRoute allowedRoles={["soldier"]}>
-        <Layout>
-          <SoldierAssignments />
-        </Layout>
-      </ProtectedRoute>
-    ),
-  },
+  // Legacy redirects — everything lives on the dashboard now
+  { path: "/soldier/tasks", element: <Navigate to="/soldier/dashboard" replace /> },
+  { path: "/soldier/assignments", element: <Navigate to="/soldier/dashboard" replace /> },
+  { path: "/soldier/leaves", element: <Navigate to="/soldier/dashboard" replace /> },
 
   // ── 404 catch all ──────────────────────────────────────────────────────
   {
@@ -131,17 +210,26 @@ const App = () => {
   const dispatch = useDispatch<AppDispatch>();
   const { isLoading } = useSelector((s: RootState) => s.auth);
 
-  useEffect(() => {
-    // verify cookie on every page load and rehydrate user
-    api
-      .get("/api/auth/me")
-      .then((res) => dispatch(setAuth(res.data.data)))
-      .catch(() => dispatch(logout()));
-  }, [dispatch]);
+  const [checked, setChecked] = useState(false);
 
-  // wait for /api/auth/me to finish before rendering any route
+  useEffect(() => {
+    if (checked) return;
+
+    api.get("/api/auth/me")
+      .then((res) => {
+        const token = localStorage.getItem("token") || "";
+        dispatch(setUser({ user: res.data.data, token }));
+      })
+      .catch((err: any) => {
+        if (err.response?.status === 401) {
+          dispatch(logout());
+        }
+      })
+      .finally(() => setChecked(true));
+  }, [checked]);
+
   // prevents flash of wrong page on refresh
-  if (isLoading) {
+  if (isLoading || !checked) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">

@@ -1,93 +1,111 @@
-import { NavLink, useNavigate } from "react-router-dom";
-import { useDispatch, useSelector } from "react-redux";
-import type { AppDispatch, RootState } from "../../store/store";
+import { useSelector, useDispatch } from "react-redux";
+import { useNavigate, useLocation } from "react-router-dom";
+import type { RootState, AppDispatch } from "../../store/store";
 import { logout } from "../../store/slices/authSlice";
 import api from "../../api/axios";
+import { LayoutDashboard, Users, Clock, ShieldAlert, LogOut, CheckSquare, UserPlus } from "lucide-react";
 
-const managerLinks = [
-  { to: "/manager/dashboard", label: "Dashboard", icon: "📊" },
-  { to: "/manager/soldiers", label: "Soldiers", icon: "🪖" },
-  { to: "/manager/tasks", label: "Tasks", icon: "📋" },
-  { to: "/manager/assignments", label: "Assignments", icon: "📌" },
-];
+type Role = "admin" | "manager" | "soldier";
 
-const soldierLinks = [
-  { to: "/soldier/dashboard", label: "Dashboard", icon: "🏠" },
-  { to: "/soldier/tasks", label: "Available Tasks", icon: "📋" },
-  { to: "/soldier/assignments", label: "My Assignments", icon: "📌" },
-];
+type MenuItem = {
+  label: string;
+  path: string;
+  icon: any;
+};
+
+const menuConfig: Record<Exclude<Role, "soldier">, MenuItem[]> = {
+  admin: [
+    { label: "Dashboard", path: "/admin/dashboard", icon: LayoutDashboard },
+  ],
+  manager: [
+    { label: "Dashboard", path: "/manager/dashboard", icon: LayoutDashboard },
+    { label: "Register Soldier", path: "/manager/RegisterSoldier", icon: UserPlus },
+    { label: "Soldiers", path: "/manager/soldiers", icon: Users },
+    { label: "Leaves", path: "/manager/leaves", icon: Clock },
+    { label: "Tasks", path: "/manager/tasks", icon: CheckSquare },
+  ],
+};
 
 const Sidebar = () => {
-  const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
-  const { user } = useSelector((s: RootState) => s.auth);
+  const location = useLocation();
+  const dispatch = useDispatch<AppDispatch>();
+  const user = useSelector((state: RootState) => state.auth.user);
 
-  const links = user?.role === "manager" ? managerLinks : soldierLinks;
+  if (!user?.role) return null;
+  if (user.role === "soldier") return null;
+
+  const menuItems = menuConfig[user.role];
 
   const handleLogout = async () => {
     try {
-      await api.post("/auth/logout");
-    } catch (err: unknown) {
-      console.log("err in sidebar", err);
-    } finally {
+      await api.post("/api/auth/logout");
+      dispatch(logout());
+      navigate("/login");
+    } catch (error) {
+      console.error(error);
       dispatch(logout());
       navigate("/login");
     }
   };
 
   return (
-    <aside className="fixed top-0 left-0 h-full w-64 bg-white/80 backdrop-blur-sm border-r border-gray-200 shadow-sm flex flex-col z-50 transition-all duration-300">
-
-      {/* user info - hover subtle scale */}
-      <div className="p-5 border-b border-gray-100 transition-all duration-200 hover:bg-gray-50/50">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 text-white flex items-center justify-center font-bold text-sm shadow-sm flex-shrink-0 transition-transform duration-200 hover:scale-105">
-            {user?.name?.charAt(0).toUpperCase()}
+    <aside className="w-72 bg-gray-950 text-gray-300 h-screen flex flex-col border-r border-gray-800/50 shadow-2xl relative z-10">
+      <div className="p-6 border-b border-gray-800/50 flex flex-col items-start gap-2">
+        <div className="flex items-center gap-3 w-full">
+          <div className="w-10 h-10 rounded-xl bg-green-900/40 border border-green-800 flex items-center justify-center text-green-500 shadow-inner">
+             <ShieldAlert size={20} />
           </div>
-          <div className="overflow-hidden">
-            <p className="font-semibold text-gray-800 text-sm truncate">{user?.name}</p>
-            <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
+          <div>
+            <h2 className="text-white font-bold tracking-widest leading-none text-sm uppercase">Soldierly</h2>
+            <span className="text-[10px] text-green-400 font-mono tracking-widest uppercase">{user.role} PANEL</span>
           </div>
         </div>
-        {user?.armyNumber && (
-          <p className="text-xs text-gray-400 mt-2 ml-1">#{user.armyNumber}</p>
-        )}
-        {user?.rank && (
-          <p className="text-xs text-gray-400 ml-1">{user.rank}</p>
-        )}
       </div>
 
-      {/* nav links - dynamic hover effects */}
-      <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
-        {links.map((link) => (
-          <NavLink
-            key={link.to}
-            to={link.to}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                isActive
-                  ? "bg-gray-100 text-gray-900 shadow-inner"
-                  : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 hover:translate-x-1 hover:shadow-sm"
-              }`
-            }
-          >
-            <span className="text-lg transition-transform duration-200 group-hover:scale-110">{link.icon}</span>
-            <span>{link.label}</span>
-          </NavLink>
-        ))}
+      <nav className="flex-1 py-6 px-4 space-y-2">
+        {menuItems.map((item) => {
+          const isActive = location.pathname.startsWith(item.path);
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.path}
+              onClick={() => navigate(item.path)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group
+                ${isActive 
+                  ? "bg-green-900/10 text-green-400 border border-green-900/30 shadow-[inset_0_1px_0_0_rgba(74,222,128,0.1)]" 
+                  : "hover:bg-gray-900/60 hover:text-white border border-transparent"
+                }
+              `}
+            >
+              <Icon size={18} className={`transition-transform duration-300 ${isActive ? "scale-110 drop-shadow-md" : "group-hover:scale-110"}`} />
+              <span className={`font-semibold tracking-wide text-sm ${isActive ? "text-green-400" : ""}`}>{item.label}</span>
+              {isActive && (
+                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(74,222,128,0.8)]" />
+              )}
+            </button>
+          );
+        })}
       </nav>
 
-      {/* logout button - lift + colour shift */}
-      <div className="p-4 border-t border-gray-100">
+      <div className="p-4 border-t border-gray-800/50">
+        <div className="bg-gray-900/60 rounded-xl p-4 mb-4 border border-gray-800 backdrop-blur-sm">
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-mono">Operations</span>
+            <span className="text-white font-bold text-sm tracking-wide truncate">{user.name}</span>
+            <span className="text-xs text-green-400/80 font-mono bg-gray-950 px-2 py-1 rounded inline-block w-fit mt-1 border border-gray-800 shadow-inner">
+               #{user.armyNumber}
+            </span>
+          </div>
+        </div>
         <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-500 hover:bg-red-50 hover:text-red-600 transition-all duration-200 hover:scale-[1.02] active:scale-95"
+           onClick={handleLogout}
+           className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-red-400/90 hover:bg-red-950/40 hover:text-red-300 transition-all duration-300 border border-transparent hover:border-red-900/50 font-semibold tracking-wide text-sm"
         >
-          <span>🚪</span>
-          <span>Logout</span>
+          <LogOut size={16} />
+          Sign Out
         </button>
       </div>
-
     </aside>
   );
 };

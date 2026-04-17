@@ -4,12 +4,10 @@ import type { PayloadAction } from "@reduxjs/toolkit";
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type LeaveStatus =
-  | "pending_manager"
-  | "approved_by_manager"
-  | "pending_admin"
+  | "pending"
   | "approved"
-  | "rejected_by_manager"
-  | "rejected_by_admin";
+  | "rejected"
+  | "approved_by_manager";
 
 export interface Leave {
   _id: string;
@@ -61,6 +59,9 @@ const leaveSlice = createSlice({
       const idx = state.leaves.findIndex((l) => l._id === action.payload._id);
       if (idx !== -1) state.leaves[idx] = action.payload;
     },
+    removeLeave: (state, action: PayloadAction<string>) => {
+      state.leaves = state.leaves.filter((l) => l._id !== action.payload);
+    },
     setLeaveLoading: (state, action: PayloadAction<boolean>) => {
       state.isLoading = action.payload;
     },
@@ -71,5 +72,5 @@ const leaveSlice = createSlice({
   },
 });
 
-export const { setLeaves, addLeave, updateLeave, setLeaveLoading, setLeaveError } = leaveSlice.actions;
+export const { setLeaves, addLeave, updateLeave, removeLeave, setLeaveLoading, setLeaveError } = leaveSlice.actions;
 export default leaveSlice.reducer;

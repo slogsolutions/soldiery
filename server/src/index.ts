@@ -8,7 +8,8 @@ import dbConnection from "./config/dbconnection.js";
 import authRoutes from "./routes/auth.js";
 import managerRoutes from "./routes/manager.js";
 import soldierRoutes from "./routes/soldier.js";
-import adminRoutes from "./routes/admin.js"
+import adminRoutes from "./routes/admin.js";
+import leaveRoutes from "./routes/leave.js";
 
 const app = express();
 
@@ -23,7 +24,8 @@ app.use(cookieParser());
 app.use("/api/auth", authRoutes);
 app.use("/api/manager", managerRoutes);
 app.use("/api/soldier", soldierRoutes);
-app.use("/api/admin",adminRoutes)
+app.use("/api/admin", adminRoutes);
+app.use("/api/leaves", leaveRoutes);
 
 // health check
 app.get("/api/health", (_req, res) => {

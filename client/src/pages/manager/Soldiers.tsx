@@ -9,6 +9,7 @@ import type { Soldier } from "../../store/slices/soldierSlice";
 import api from "../../api/axios";
 import { API_ROUTES } from "@/utils/constant";
 import Badge from "../../components/ui/Badge";
+import { AlertCircle, Filter, Users, ChevronRight, Activity, ShieldCheck } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -21,7 +22,7 @@ const STATUS_OPTIONS: { value: SoldierStatus; label: string }[] = [
 ];
 
 const FILTER_OPTIONS: { value: string; label: string }[] = [
-  { value: "", label: "All Soldiers" },
+  { value: "", label: "All Units" },
   { value: "pending", label: "Pending Approval" },
   { value: "active", label: "Active" },
   { value: "on_leave", label: "On Leave" },
@@ -38,8 +39,10 @@ const extractError = (err: unknown): string => {
 // ─── Avatar ──────────────────────────────────────────────────────────────────
 
 const Avatar = ({ name, isBusy }: { name: string; isBusy: boolean }) => (
-  <div className={`w-9 h-9 rounded-full flex items-center justify-center font-semibold text-sm flex-shrink-0 ${
-    isBusy ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
+  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 border shadow-inner transition-all ${
+    isBusy 
+      ? "bg-blue-900/40 text-blue-400 border-blue-800/50 shadow-[inset_0_2px_10px_rgba(59,130,246,0.1)]" 
+      : "bg-green-900/40 text-green-400 border-green-800/50 shadow-[inset_0_2px_10px_rgba(34,197,94,0.1)]"
   }`}>
     {name.charAt(0).toUpperCase()}
   </div>
@@ -103,126 +106,147 @@ const ManagerSoldiers = () => {
   const pendingCount = soldiers.filter((s) => s.status === "pending").length;
 
   return (
-    <div className="space-y-6">
-
-      {/* header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
+      
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-800/60 pb-6 relative">
+        <div className="absolute bottom-0 left-0 w-32 h-[1px] bg-gradient-to-r from-green-500 to-transparent"></div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Soldiers</h1>
-          <p className="text-gray-500 text-sm mt-1">Manage and monitor all soldiers in your unit</p>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-1.5 h-1.5 bg-green-500 rounded-full shadow-[0_0_8px_#22c55e]"></span>
+            <p className="text-green-500 text-xs tracking-[0.3em] uppercase font-mono">Operations Roster</p>
+          </div>
+          <h1 className="text-4xl font-extrabold text-white tracking-tight drop-shadow-sm">Soldier Registry</h1>
+          <p className="text-gray-400 text-sm mt-1">Manage and monitor all active personnel in your unit</p>
         </div>
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
-        >
-          {FILTER_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+        
+        <div className="flex flex-wrap items-center gap-2">
+           <Filter size={16} className="text-gray-600 mr-2" />
+           {FILTER_OPTIONS.map((o) => (
+             <button
+               key={o.value}
+               onClick={() => setFilter(o.value)}
+               className={`px-4 py-2 rounded-xl text-xs font-bold tracking-widest uppercase transition-all border ${
+                 filter === o.value 
+                   ? "bg-green-900/40 text-green-400 border-green-500/40 shadow-[0_0_15px_rgba(34,197,94,0.1)]" 
+                   : "bg-gray-900 text-gray-500 border-gray-800 hover:text-gray-300 hover:border-gray-700"
+               }`}
+             >
+               {o.label}
+             </button>
+           ))}
+        </div>
       </div>
 
-      {/* pending banner */}
+      {/* Pending Banner */}
       {pendingCount > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-center gap-3">
-          <span className="text-yellow-600 text-xl">⚠️</span>
-          <p className="text-yellow-800 text-sm font-medium">
-            {pendingCount} soldier{pendingCount > 1 ? "s" : ""} waiting for your approval
+        <div className="bg-orange-950/40 border border-orange-900/50 rounded-2xl p-4 flex items-center gap-3 backdrop-blur-sm animate-pulse-slow">
+          <AlertCircle className="text-orange-500 flex-shrink-0" size={20} />
+          <p className="text-orange-400/90 text-sm font-semibold tracking-wide">
+            HQ Alert: {pendingCount} new soldier account{pendingCount > 1 ? "s require" : " requires"} your authorization.
           </p>
         </div>
       )}
 
-      {/* table */}
-      {isLoading ? (
-        <div className="flex items-center justify-center h-48 text-gray-400">
-          <div className="text-center">
-            <div className="text-3xl mb-2">🪖</div>
-            <p>Loading soldiers...</p>
-          </div>
+      {/* Roster Table */}
+      <div className="bg-gray-900/40 border border-gray-800/80 rounded-3xl overflow-hidden backdrop-blur-md shadow-2xl">
+        <div className="p-6 border-b border-gray-800/50 bg-gray-900/40 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-white tracking-wide">Personnel Matrix</h3>
+          <span className="text-[10px] text-gray-600 font-mono tracking-widest uppercase font-bold bg-gray-950 px-2 py-1 rounded border border-gray-800">
+             {soldiers.length} Operatives
+          </span>
         </div>
-      ) : !soldiers.length ? (
-        <div className="flex items-center justify-center h-48 bg-white rounded-xl shadow text-gray-400">
-          <div className="text-center">
-            <div className="text-3xl mb-2">🪖</div>
-            <p>No soldiers found</p>
+
+        {isLoading ? (
+          <div className="p-20 text-center animate-pulse">
+            <Activity size={40} className="text-green-500 mx-auto mb-4" />
+            <p className="text-green-500/60 font-mono uppercase tracking-[0.2em] text-xs">Syncing Registry...</p>
           </div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl shadow overflow-hidden">
+        ) : !soldiers.length ? (
+          <div className="p-20 text-center">
+            <Users size={48} className="text-gray-800 mx-auto mb-4 opacity-30" />
+            <p className="text-gray-500 font-medium tracking-wide font-mono uppercase text-xs">No operatives found in this category.</p>
+          </div>
+        ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left px-6 py-4 font-semibold text-gray-600">Soldier</th>
-                  <th className="text-left px-6 py-4 font-semibold text-gray-600">Army No.</th>
-                  <th className="text-left px-6 py-4 font-semibold text-gray-600">Unit</th>
-                  <th className="text-left px-6 py-4 font-semibold text-gray-600">Duty</th>
-                  <th className="text-left px-6 py-4 font-semibold text-gray-600">Account</th>
-                  <th className="text-left px-6 py-4 font-semibold text-gray-600">Actions</th>
+              <thead className="bg-gray-950/50">
+                <tr>
+                  <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Operative</th>
+                  <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Registry ID</th>
+                  <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Unit</th>
+                  <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Operational Status</th>
+                  <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Account Status</th>
+                  <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Directives</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-gray-800/40">
                 {soldiers.map((s) => (
-                  <tr key={s._id} className="hover:bg-gray-50 transition-colors">
-
-                    {/* name */}
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
+                  <tr key={s._id} className="hover:bg-gray-800/30 transition-colors group">
+                    {/* Operative Info */}
+                    <td className="px-6 py-5 whitespace-nowrap">
+                      <div className="flex items-center gap-4">
                         <Avatar name={s.name} isBusy={s.isBusy ?? false} />
                         <div>
-                          <p className="font-medium text-gray-800">{s.name}</p>
-                          <p className="text-xs text-gray-400">{s.rank ?? "—"}</p>
+                          <p className="font-bold text-white text-sm tracking-wide">{s.name}</p>
+                          <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase mt-0.5">{s.rank ?? "Unranked"}</p>
                         </div>
                       </div>
                     </td>
 
-                    {/* army number */}
-                    <td className="px-6 py-4 text-gray-600 font-mono text-xs">{s.armyNumber}</td>
+                    {/* Army No */}
+                    <td className="px-6 py-5 text-gray-400 font-mono text-xs tracking-wider">#{s.armyNumber}</td>
 
-                    {/* unit */}
-                    <td className="px-6 py-4 text-gray-600">{s.unit ?? "—"}</td>
+                    {/* Unit */}
+                    <td className="px-6 py-5">
+                       <span className="text-gray-400 font-semibold bg-gray-950 px-3 py-1.5 rounded-lg border border-gray-800">
+                          {s.unit ?? "—"}
+                       </span>
+                    </td>
 
-                    {/* duty status */}
-                    <td className="px-6 py-4">
+                    {/* Operational Status (Job) */}
+                    <td className="px-6 py-5">
                       {s.status === "active" ? (
                         s.isBusy ? (
                           <div>
-                            <Badge status="active" />
+                            <span className="inline-flex items-center gap-1.5 text-blue-400 font-bold text-[10px] tracking-widest uppercase bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20 mb-1">
+                               <Activity size={10} /> Deployed
+                            </span>
                             {s.currentTask && (
-                              <p className="text-xs text-gray-400 mt-1">{s.currentTask.title}</p>
+                              <p className="text-xs text-gray-400 max-w-[200px] truncate" title={s.currentTask.title}>{s.currentTask.title}</p>
                             )}
                           </div>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-green-600 font-semibold text-xs">
-                            <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-                            FREE
+                          <span className="inline-flex items-center gap-1.5 text-green-400 font-bold text-[10px] tracking-widest uppercase bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20 shadow-[0_0_10px_rgba(34,197,94,0.05)]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_5px_#22c55e]" /> FREE
                           </span>
                         )
                       ) : (
-                        <span className="text-gray-400 text-xs">—</span>
+                        <span className="text-gray-600 text-xs italic">N/A</span>
                       )}
                     </td>
 
-                    {/* account status */}
-                    <td className="px-6 py-4"><Badge status={s.status} /></td>
+                    {/* Account Status */}
+                    <td className="px-6 py-5"><Badge status={s.status} /></td>
 
-                    {/* actions */}
-                    <td className="px-6 py-4">
+                    {/* Directives/Actions */}
+                    <td className="px-6 py-5">
                       <div className="flex items-center gap-2">
                         {s.status === "pending" ? (
                           <button
                             onClick={() => handleApprove(s._id)}
                             disabled={approvingId === s._id}
-                            className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-700 font-medium transition-all disabled:opacity-60"
+                            className="bg-green-600 text-white text-xs px-4 py-2 rounded-xl hover:bg-green-500 font-bold transition-all shadow-md shadow-green-900/20 flex items-center gap-1.5 group disabled:opacity-50"
                           >
-                            {approvingId === s._id ? "Approving..." : "Approve"}
+                            <ShieldCheck size={14} className="group-hover:scale-110 transition-transform" />
+                            {approvingId === s._id ? "Processing..." : "Authorize"}
                           </button>
                         ) : (
                           <select
                             value={s.status}
                             disabled={updatingId === s._id}
                             onChange={(e) => handleStatusChange(s._id, e.target.value)}
-                            className="border border-gray-300 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500 bg-white disabled:opacity-60"
+                            className="bg-gray-900 border border-gray-700 text-white text-xs font-semibold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-green-500/50 appearance-none disabled:opacity-50 transition-all cursor-pointer hover:border-gray-600"
                           >
                             {STATUS_OPTIONS.map((o) => (
                               <option key={o.value} value={o.value}>{o.label}</option>
@@ -236,13 +260,8 @@ const ManagerSoldiers = () => {
               </tbody>
             </table>
           </div>
-          <div className="px-6 py-3 bg-gray-50 border-t border-gray-100">
-            <p className="text-xs text-gray-400">
-              Showing {soldiers.length} soldier{soldiers.length !== 1 ? "s" : ""}
-            </p>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

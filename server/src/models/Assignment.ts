@@ -69,6 +69,13 @@ const assignmentSchema = new Schema<IAssignment>(
       type: String,
       trim: true,
     },
+
+    status: {
+      type: String,
+      enum: ["active", "pending_review", "completed", "rejected"],
+      default: "active",
+      required: true,
+    },
   },
   { timestamps: true }
 );

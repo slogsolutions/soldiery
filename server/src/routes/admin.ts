@@ -12,6 +12,17 @@ import {
   getAdminLeaves,
   adminApproveLeave,
   adminRejectLeave,
+
+  // manager mirroring
+  getManagerOverviewDashboard,
+  getManagerOverviewSoldiers,
+  getManagerOverviewLeaves,
+
+  // tasks
+  getAdminTasks,
+
+  // assignments
+  createAdminAssignment,
 } from "../controllers/admin";
 
 const router = Router();
@@ -40,5 +51,22 @@ router.get("/leaves", getAdminLeaves);
 router.patch("/leaves/:id/approve", adminApproveLeave);
 
 router.patch("/leaves/:id/reject", adminRejectLeave);
+
+// ─────────────────────────────
+// TASK MANAGEMENT
+// ─────────────────────────────
+router.get("/tasks", getAdminTasks);
+
+// ─────────────────────────────
+// ASSIGNMENT MANAGEMENT
+// ─────────────────────────────
+router.post("/assignments", createAdminAssignment);
+
+// ─────────────────────────────
+// MANAGER OVERVIEW DASHBOARD
+// ─────────────────────────────
+router.get("/managers/:id/dashboard", getManagerOverviewDashboard);
+router.get("/managers/:id/soldiers", getManagerOverviewSoldiers);
+router.get("/managers/:id/leaves", getManagerOverviewLeaves);
 
 export default router;

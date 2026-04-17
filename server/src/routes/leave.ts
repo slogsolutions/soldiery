@@ -13,6 +13,7 @@ import {
 
   getAdminLeaves,
   adminApproveLeave,
+  adminEditLeave,
   adminRejectLeave,
 } from "../controllers/leave";
 
@@ -49,6 +50,7 @@ const adminRouter = Router();
 adminRouter.use(protect, restrictTo("admin"));
 
 adminRouter.get("/leaves", getAdminLeaves);
+adminRouter.patch("/leaves/:id/edit", adminEditLeave);
 adminRouter.patch("/leaves/:id/approve", adminApproveLeave);
 adminRouter.patch("/leaves/:id/reject", adminRejectLeave);
 
