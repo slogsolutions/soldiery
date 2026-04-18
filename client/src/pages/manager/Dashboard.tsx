@@ -10,8 +10,8 @@ import {
 import api from "../../api/axios";
 import { useSelector } from "react-redux";
 import type { RootState } from "../../store/store";
-import { ShieldAlert, Users, FolderClock, Clock, Activity, ChevronRight, CheckSquare, ArrowLeft, Eye, Plus } from "lucide-react";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { ShieldAlert, Users, FolderClock, Activity, ArrowLeft, Eye, Plus, Dumbbell, Footprints } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
 import Modal from "../../components/ui/Modal";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -36,17 +36,39 @@ interface Soldier {
   armyNumber: string;
   rank?: string;
   isBusy: boolean;
-  currentTask: { title: string } | null;
+  isOnLeave: boolean;
+  currentTask: { title: string; type?: string } | null;
   status: string;
+}
+
+interface Task {
+  _id: string;
+  title: string;
+  type?: string;
+  description?: string;
+  status: string;
+}
+
+interface Assignment {
+  _id: string;
+  soldier: { _id: string; name: string; rank?: string; armyNumber: string };
+  task: { _id: string; title: string; description?: string };
+  startTime: string;
+  endTime: string;
+  status: "upcoming" | "active" | "pending_review" | "completed" | "rejected";
+  createdBy: "manager" | "soldier";
+  assignedBy?: { name: string; rank?: string };
+  notes?: string;
+  priority?: "low" | "medium" | "high";
+  location?: string;
+  createdAt: string;
 }
 
 interface Leave {
   _id: string;
   status: string;
-  startDate: string;
-  endDate: string;
-  soldier: string | { _id: string };
 }
+
 
 interface CustomTooltipProps {
   active?: boolean;
@@ -70,6 +92,59 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   return null;
 };
 
+// ─── Helper: Get icon for task type ───────────────────────────────────
+const getTaskIcon = (taskTitle: string, taskType?: string) => {
+  const title = taskTitle.toLowerCase();
+  const type = taskType?.toLowerCase() || '';
+
+  if (type.includes('run') || title.includes('run') || title.includes('jog')) {
+    return <Footprints size={18} />;
+  } else if (type.includes('gym') || title.includes('gym') || title.includes('weight')) {
+    return <Dumbbell size={18} />;
+  } else if (type.includes('exercise') || title.includes('exercise') || title.includes('pt') || title.includes('training')) {
+    return <Activity size={18} />;
+  } else if (title.includes('guard') || title.includes('security') || title.includes('patrol')) {
+    return <ShieldAlert size={18} />;
+  } else if (title.includes('clean') || title.includes('maintenance')) {
+    return <FolderClock size={18} />;
+  } else {
+    return <Activity size={18} />; // default icon
+  }
+};
+
+// ─── Helper: Get color for task ───────────────────────────────────
+const getTaskColor = (index: number): 'emerald' | 'blue' | 'purple' => {
+  const colors = ['emerald', 'blue', 'purple'] as const;
+  return colors[index % colors.length];
+};
+
+// ─── Helper: Dynamic task counts based on actual tasks ───────────────────────────────────
+const useDynamicTaskCounts = (soldiers: Soldier[], tasks: Task[]) => {
+  const taskCounts: { [taskId: string]: { count: number; task: Task } } = {};
+
+  // Initialize counts for all tasks
+  tasks.forEach(task => {
+    taskCounts[task._id] = { count: 0, task };
+  });
+
+  // Count soldiers assigned to each task
+  soldiers.forEach(soldier => {
+    if (soldier.isBusy && soldier.currentTask) {
+      // Find the task by title or ID
+      const matchingTask = tasks.find(task =>
+        task.title === soldier.currentTask?.title ||
+        task._id === soldier.currentTask?.title // fallback if title is ID
+      );
+
+      if (matchingTask) {
+        taskCounts[matchingTask._id].count++;
+      }
+    }
+  });
+
+  return taskCounts;
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const ManagerDashboard = () => {
@@ -80,23 +155,28 @@ const ManagerDashboard = () => {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [soldiers, setSoldiers] = useState<Soldier[]>([]);
   const [leaves, setLeaves] = useState<Leave[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<'free' | 'busy' | 'onleave' | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [taskAssignments, setTaskAssignments] = useState<Assignment[]>([]);
 
   const fetchDashboard = async () => {
     try {
       setLoading(true);
-      
+
       const dashRoute = id ? `/api/admin/managers/${id}/dashboard` : `/api/manager/dashboard`;
       const soldRoute = id ? `/api/admin/managers/${id}/soldiers` : `/api/manager/soldiers`;
       const leaveRoute = id ? `/api/admin/managers/${id}/leaves` : `/api/manager/leaves`;
+      const taskRoute = id ? `/api/admin/managers/${id}/tasks` : `/api/manager/tasks`;
 
-      const [dashRes, soldRes, leaveRes] = await Promise.allSettled([
+      const [dashRes, soldRes, leaveRes, taskRes] = await Promise.allSettled([
         api.get(dashRoute),
         api.get(soldRoute),
         api.get(leaveRoute),
+        api.get(taskRoute),
       ]);
 
       if (dashRes.status === "fulfilled" && dashRes.value.data.success) {
@@ -107,6 +187,9 @@ const ManagerDashboard = () => {
       }
       if (leaveRes.status === "fulfilled" && leaveRes.value.data.success) {
         setLeaves(leaveRes.value.data.data);
+      }
+      if (taskRes.status === "fulfilled" && taskRes.value.data.success) {
+        setTasks(taskRes.value.data.data);
       }
     } catch (err: any) {
       setError(err.message || "Something went wrong fetching data.");
@@ -150,57 +233,54 @@ const ManagerDashboard = () => {
     );
   }
 
-  // ─── Frontend Computed Data ───────────────────────────────────────────────────
+  // ─── Computed Data ─────────────────────────────────────────────────────────
+  const onLeaveCount = soldiers.filter(s => s.isOnLeave).length;
+  const pendingLeaves = leaves.filter((l) => l.status === "pending").length;
+  const total = dashboard?.total || 0;
+  const free = dashboard?.free || 0;
+  const busy = dashboard?.busy || 0;
 
-  const now = new Date();
-  const getLeaveSoldierId = (leave: Leave) => {
-    if (typeof leave.soldier === "string") return leave.soldier;
-    return leave.soldier?._id || "";
+  const fetchTaskAssignments = async (taskId: string) => {
+    try {
+      const response = await api.get(`/api/manager/assignments?task=${taskId}`);
+      if (response.data.success) {
+        setTaskAssignments(response.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch task assignments:', err);
+    }
   };
 
-  const onLeaveCount = dashboard?.onLeave || leaves.filter((l) => {
-    const start = new Date(l.startDate);
-    const end = new Date(l.endDate);
-    const isActiveLeave = now >= start && now <= end;
-    const isApproved = l.status === "approved" || l.status === "approved_by_manager";
-    return isActiveLeave && isApproved;
-  }).length;
-
-  const pendingLeaves = leaves.filter((l) => l.status === "pending").length;
-
-  // Use backend free count directly since it now accounts for on leave soldiers
-  const backendFree = dashboard?.free || 0;
-  const busy = dashboard?.busy || 0;
-  const total = dashboard?.total || 0;
-  const actualFree = backendFree;
+  const handleTaskClick = (task: Task) => {
+    setSelectedTask(task);
+    fetchTaskAssignments(task._id);
+  };
 
   const pieData: PieSlice[] = [
-    { 
-      label: "Free Units", 
-      value: actualFree, 
+    {
+      label: "Free Units",
+      value: free,
       color: "#10b981",
       onClick: () => setSelectedCategory('free')
-    }, // Green
-    { 
-      label: "Deployed / On Duty", 
-      value: busy, 
+    },
+    {
+      label: "Deployed / On Duty",
+      value: busy,
       color: "#3b82f6",
       onClick: () => setSelectedCategory('busy')
-    }, // Blue
-    { 
-      label: "On Leave", 
-      value: onLeaveCount, 
+    },
+    {
+      label: "On Leave",
+      value: onLeaveCount,
       color: "#f59e0b",
       onClick: () => setSelectedCategory('onleave')
-    }, // Amber
+    },
   ].filter((d) => d.value > 0);
 
   const hasAnyData = total > 0;
 
-  // Filter soldiers based on selected category
   const getFilteredSoldiers = () => {
     if (!selectedCategory) return soldiers;
-
     return soldiers.filter(soldier => {
       switch (selectedCategory) {
         case 'free':
@@ -216,35 +296,26 @@ const ManagerDashboard = () => {
   };
 
   const filteredSoldiers = getFilteredSoldiers();
+  const taskCounts = useDynamicTaskCounts(soldiers, tasks);
   const isAdmin = user?.role === 'admin';
-  const location = useLocation();
 
   return (
-    <div key={location.key} className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
-      
+    <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-700">
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-800/60 pb-6 relative">
-        <div className="absolute bottom-0 left-0 w-32 h-[1px] bg-gradient-to-r from-green-500 to-transparent"></div>
+        <div className="absolute top-2 left-0 w-32 h-[1px] bg-gradient-to-r from-green-500 to-transparent"></div>
         <div>
-           {id ? (
-             <button 
-               onClick={() => navigate("/admin/dashboard")}
-               className="flex items-center gap-1.5 text-gray-400 hover:text-green-400 text-xs tracking-widest font-mono mb-4 transition-colors w-fit"
-             >
-               <ArrowLeft size={14} /> BACK TO COMMAND CENTER
-             </button>
-           ) : (
-             <div className="flex items-center gap-2 mb-2">
-               <span className="w-1.5 h-1.5 bg-green-500 rounded-full shadow-[0_0_8px_#22c55e]"></span>
-               <p className="text-green-500 text-xs tracking-[0.3em] uppercase font-mono">Operations Center</p>
-             </div>
-           )}
-           <h1 className="text-4xl font-extrabold text-white tracking-tight drop-shadow-sm">
-             {id ? "Target Manager View" : "Dashboard"}
-           </h1>
-           <p className="text-gray-400 text-sm mt-1">
-             {id ? "Viewing delegated unit deployment" : `Welcome back, ${user?.name}`}
-           </p>
+          {id ? (
+            <button
+              onClick={() => navigate("/admin/dashboard")}
+              className="flex items-center gap-1.5 text-gray-400 hover:text-green-400 text-xs tracking-widest font-mono mb-4 transition-colors w-fit"
+            >
+              <ArrowLeft size={14} /> BACK TO COMMAND CENTER
+            </button>
+          ) : (
+            <div />
+          )}
         </div>
         <div className="flex items-center gap-3">
           {!id && !isAdmin && (
@@ -256,170 +327,136 @@ const ManagerDashboard = () => {
             </button>
           )}
           <button
-             onClick={fetchDashboard}
-             className="group relative overflow-hidden bg-gray-900 text-gray-300 hover:bg-gray-800 border border-gray-700 font-bold px-6 py-3 rounded-xl transition-all flex items-center gap-2 text-sm"
+            onClick={fetchDashboard}
+            className="group relative overflow-hidden bg-gray-900 text-gray-300 hover:bg-gray-800 border border-gray-700 font-bold px-6 py-3 rounded-xl transition-all flex items-center gap-2 text-sm"
           >
-             🔄 Refresh
+            🔄 Refresh
           </button>
         </div>
       </div>
 
-      {/* Metrics Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-gray-900/40 border border-gray-800/80 rounded-2xl p-5 backdrop-blur-md relative overflow-hidden group hover:bg-gray-900/60 transition-all flex flex-col justify-between">
-             <div className="flex items-center gap-2 text-gray-400 text-xs font-semibold uppercase tracking-widest mb-3">
-                 <Users size={14} className="text-white"/> Total Soldiers
-             </div>
-             <p className="text-4xl font-black text-white tracking-tighter">{total}</p>
-          </div>
+      {/* Main Two-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Left Column: Pie Chart */}
+        <div className="bg-gray-900/40 border border-gray-800/80 rounded-3xl p-6 backdrop-blur-md relative overflow-hidden flex flex-col">
+          <h3 className="text-lg font-bold text-white tracking-wide mb-2">Live Deployment Status</h3>
+          <p className="text-xs text-gray-400 font-mono mb-6">Unit breakdown by current directive</p>
+          <p className="text-gray-400 text-xs text-center mb-4">Click on a section to view soldiers</p>
 
-          <div className="bg-gray-900/40 border border-green-900/30 rounded-2xl p-5 backdrop-blur-md relative overflow-hidden group hover:bg-green-950/20 transition-all flex flex-col justify-between">
-             <div className="flex items-center gap-2 text-green-500/80 text-xs font-semibold uppercase tracking-widest mb-3">
-                 <CheckSquare size={14} className="text-green-500"/> Free & Ready
-             </div>
-             <p className="text-4xl font-black text-green-400 tracking-tighter">{actualFree}</p>
-          </div>
-
-          <div className="bg-gray-900/40 border border-blue-900/30 rounded-2xl p-5 backdrop-blur-md relative overflow-hidden group hover:bg-blue-950/20 transition-all flex flex-col justify-between">
-             <div className="flex items-center gap-2 text-blue-500/80 text-xs font-semibold uppercase tracking-widest mb-3">
-                 <ShieldAlert size={14} className="text-blue-500"/> On Duty
-             </div>
-             <p className="text-4xl font-black text-blue-400 tracking-tighter">{busy}</p>
-          </div>
-
-          <div className="bg-gray-900/40 border border-amber-900/30 rounded-2xl p-5 backdrop-blur-md relative overflow-hidden group hover:bg-amber-950/20 transition-all">
-             <div className="flex items-center justify-between">
-                 <div className="flex items-center gap-2 text-amber-500/80 text-xs font-semibold uppercase tracking-widest mb-3">
-                     <FolderClock size={14} className="text-amber-500"/> On Leave
-                 </div>
-                 {pendingLeaves > 0 && (
-                     <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm animate-pulse flex items-center gap-1">
-                         {pendingLeaves} PENDING
-                     </span>
-                 )}
-             </div>
-             <p className="text-4xl font-black text-amber-400 tracking-tighter">{onLeaveCount}</p>
-          </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
-          {/* Pie Chart Representation */}
-          <div className="bg-gray-900/40 border border-gray-800/80 rounded-3xl p-6 backdrop-blur-md relative overflow-hidden flex flex-col">
-              <h3 className="text-lg font-bold text-white tracking-wide mb-2">Live Deployment Status</h3>
-              <p className="text-xs text-gray-400 font-mono mb-6">Unit breakdown by current directive</p>
-              <p className="text-gray-400 text-xs text-center mb-4">Click on a section to view soldiers</p>
-              
-              <div className="flex-1 flex flex-col items-center justify-center min-h-[300px]">
-                 {!hasAnyData ? (
-                    <div className="text-center text-gray-500">
-                        <Users size={48} className="mx-auto mb-3 opacity-30" />
-                        <p className="text-sm font-bold tracking-wider">NO UNITS ASSIGNED</p>
-                    </div>
-                 ) : (
-                    <>
-                       <ResponsiveContainer width="100%" height={260}>
-                         <PieChart>
-                           <Pie
-                             data={pieData}
-                             cx="50%"
-                             cy="50%"
-                             innerRadius={60}
-                             outerRadius={105}
-                             paddingAngle={5}
-                             dataKey="value"
-                             nameKey="label"
-                             stroke="none"
-                             isAnimationActive={true}
-                             onClick={(data) => data?.onClick?.()}
-                             style={{ cursor: 'pointer' }}
-                           >
-                             {pieData.map((entry, index) => (
-                               <Cell key={`cell-${index}`} fill={entry.color} style={{ cursor: 'pointer' }} />
-                             ))}
-                           </Pie>
-                           <Tooltip content={<CustomTooltip />} />
-                           <Legend
-                             onClick={(entry) => {
-                               const slice = pieData.find(d => d.label === entry.value);
-                               slice?.onClick?.();
-                             }}
-                             formatter={(value: string) => (
-                               <span className="text-sm text-gray-300 font-medium ml-2 tracking-wide cursor-pointer">{value}</span>
-                             )}
-                             wrapperStyle={{ paddingTop: "20px", cursor: 'pointer' }}
-                           />
-                         </PieChart>
-                       </ResponsiveContainer>
-                    </>
-                 )}
+          <div className="flex-1 flex flex-col items-center justify-center min-h-[300px]">
+            {!hasAnyData ? (
+              <div className="text-center text-gray-500">
+                <Users size={48} className="mx-auto mb-3 opacity-30" />
+                <p className="text-sm font-bold tracking-wider">NO UNITS ASSIGNED</p>
               </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={105}
+                    paddingAngle={5}
+                    dataKey="value"
+                    nameKey="label"
+                    stroke="none"
+                    isAnimationActive={true}
+                    onClick={(data) => data?.onClick?.()}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} style={{ cursor: 'pointer' }} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend
+                    onClick={(entry) => {
+                      const slice = pieData.find(d => d.label === entry.value);
+                      slice?.onClick?.();
+                    }}
+                    formatter={(value: string) => (
+                      <span className="text-sm text-gray-300 font-medium ml-2 tracking-wide cursor-pointer">{value}</span>
+                    )}
+                    wrapperStyle={{ paddingTop: "20px", cursor: 'pointer' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Big Panel with Tasks & Metrics */}
+        <div className="bg-gray-900/40 border border-gray-800/80 rounded-3xl p-6 backdrop-blur-md relative overflow-hidden flex flex-col">
+          <h3 className="text-lg font-bold text-white tracking-wide mb-2">Deployment Status</h3>
+          <p className="text-xs text-gray-400 font-mono mb-6">{total} soldiers total</p>
+
+          {/* On Duty section with task type boxes */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-blue-400 uppercase tracking-wider">
+                ON DUTY — {busy} SOLDIERS
+              </p>
+              <button
+                onClick={() => setSelectedCategory('busy')}
+                className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                View soldiers →
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {Object.entries(taskCounts)
+                .filter(([_, { count }]) => count > 0)
+                .map(([taskId, { count, task }], index) => (
+                  <TaskTypeBox
+                    key={taskId}
+                    label={task.title.toUpperCase()}
+                    count={count}
+                    icon={getTaskIcon(task.title, task.type)}
+                    color={getTaskColor(index)}
+                    onClick={() => handleTaskClick(task)}
+                  />
+                ))}
+              {Object.keys(taskCounts).filter(taskId => taskCounts[taskId].count > 0).length === 0 && (
+                <div className="col-span-full text-center py-8">
+                  <Activity size={32} className="text-gray-600 mx-auto mb-2 opacity-50" />
+                  <p className="text-gray-500 text-sm">No active tasks</p>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Soldiers Detailed List representing 'see all his soldiers' */}
-          <div className="bg-gray-900/40 border border-gray-800/80 rounded-3xl overflow-hidden backdrop-blur-md flex flex-col max-h-[480px]">
-             <div className="p-6 border-b border-gray-800/50 bg-gray-900/40 flex items-center justify-between">
-                <h3 className="text-lg font-bold text-white tracking-wide">Platoon Overview</h3>
-                <span className="text-gray-500 text-xs font-mono">{soldiers.length} Soldiers</span>
-             </div>
-             
-             <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                 {soldiers.length === 0 ? (
-                    <div className="text-center text-gray-500 py-16">
-                        <Users size={32} className="mx-auto mb-3 opacity-30" />
-                        <p className="text-sm font-bold tracking-wider">NO SOLDIERS REGISTERED</p>
-                    </div>
-                 ) : (
-                    soldiers.map(s => {
-                        let soldierStateLabel = "Free";
-                        let stateColorClass = "bg-green-500";
-                        let bannerBg = "bg-green-500/10 border-green-500/20";
-                        
-                        if (s.isOnLeave) {
-                            soldierStateLabel = "On Leave";
-                            stateColorClass = "bg-amber-500";
-                            bannerBg = "bg-amber-500/10 border-amber-500/20";
-                        } else if (s.isBusy) {
-                            soldierStateLabel = "On Duty";
-                            stateColorClass = "bg-blue-500";
-                            bannerBg = "bg-blue-500/10 border-blue-500/20";
-                        }
-
-                        return (
-                           <div key={s._id} className="p-4 bg-gray-900/80 rounded-2xl border border-gray-800 hover:border-gray-600 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">
-                               <div className="flex items-center gap-4">
-                                  <div className="w-10 h-10 rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center text-gray-400 font-mono font-bold group-hover:text-white transition-colors shadow-inner">
-                                     {s.name.charAt(0).toUpperCase()}
-                                  </div>
-                                  <div>
-                                     <h4 className="text-white font-bold tracking-wide text-sm">{s.name}</h4>
-                                     <div className="flex items-center gap-2 mt-1">
-                                        <span className="text-gray-500 font-mono text-[10px] bg-gray-950 px-1.5 py-0.5 rounded border border-gray-800">
-                                          #{s.armyNumber}
-                                        </span>
-                                        {s.rank && (
-                                          <span className="text-blue-400/80 text-[10px] font-semibold tracking-widest uppercase">{s.rank}</span>
-                                        )}
-                                     </div>
-                                  </div>
-                               </div>
-                               
-                               <div className={`flex flex-col sm:items-end p-2 rounded-lg border ${bannerBg} min-w-[120px]`}>
-                                  <div className="flex items-center gap-1.5 mb-1">
-                                     <span className={`w-1.5 h-1.5 rounded-full ${stateColorClass}`}></span>
-                                     <span className="text-[10px] font-bold tracking-widest uppercase text-white">{soldierStateLabel}</span>
-                                  </div>
-                                  {s.isBusy && s.currentTask && (
-                                     <span className="text-gray-400 text-[10px] truncate max-w-[120px] font-mono" title={s.currentTask.title}>
-                                        {s.currentTask.title}
-                                     </span>
-                                  )}
-                               </div>
-                           </div>
-                        );
-                    })
-                 )}
-             </div>
+          {/* Four metric cards */}
+          <div className="grid grid-cols-2 gap-4">
+            <MetricCard
+              label="TOTAL"
+              value={total}
+              color="gray"
+              onClick={() => setSelectedCategory(null)}
+            />
+            <MetricCard
+              label="FREE"
+              value={free}
+              color="green"
+              onClick={() => setSelectedCategory('free')}
+            />
+            <MetricCard
+              label="ON DUTY"
+              value={busy}
+              color="blue"
+              onClick={() => setSelectedCategory('busy')}
+            />
+            <MetricCard
+              label="ON LEAVE"
+              value={onLeaveCount}
+              color="amber"
+              onClick={() => setSelectedCategory('onleave')}
+              badge={pendingLeaves > 0 ? pendingLeaves : undefined}
+            />
           </div>
+        </div>
       </div>
 
       {/* Filtered Soldiers Modal */}
@@ -526,6 +563,19 @@ const ManagerDashboard = () => {
                                   <Eye size={14} />
                                 </button>
                               )}
+                              {!soldier.isOnLeave && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedCategory(null);
+                                    navigate(isAdmin ? `/admin/leave/${soldier._id}` : `/manager/leave/${soldier._id}`);
+                                  }}
+                                  className="inline-flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors px-3 py-2 hover:bg-amber-900/20 rounded-lg border border-amber-900/30"
+                                  title="Apply for Leave"
+                                >
+                                  <ArrowLeft size={14} />
+                                  <span className="text-xs uppercase tracking-[0.2em] font-bold">Leave</span>
+                                </button>
+                              )}
                               <button
                                 onClick={() => {
                                   setSelectedCategory(null);
@@ -550,6 +600,144 @@ const ManagerDashboard = () => {
         </Modal>
       )}
 
+      {/* Task-Specific Soldiers Modal */}
+      {selectedTask && (
+        <Modal
+          title={`${selectedTask.title} - ${taskAssignments.filter(a => a.status === 'active').length} Active Personnel`}
+          onClose={() => {
+            setSelectedTask(null);
+            setTaskAssignments([]);
+          }}
+          size="xl"
+        >
+          {taskAssignments.filter(a => a.status === 'active').length === 0 ? (
+            <div className="p-8 text-center">
+              <Users size={48} className="text-gray-800 mx-auto mb-4 opacity-30" />
+              <p className="text-gray-500 font-medium tracking-wide font-mono uppercase text-xs">
+                No personnel currently active on this task
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-950/50">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">#</th>
+                    <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">Personnel</th>
+                    <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">Army ID</th>
+                    <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">Rank</th>
+                    <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">Start Time</th>
+                    <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">End Time</th>
+                    {isAdmin && (
+                      <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">Actions</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/40">
+                  {taskAssignments
+                    .filter(a => a.status === 'active')
+                    .map((assignment, index) => {
+                    return (
+                      <tr key={assignment._id} className="hover:bg-gray-900/20 transition-colors">
+                        <td className="px-4 py-3 text-gray-400 font-mono text-xs">{index + 1}</td>
+                        <td className="px-4 py-3 text-white font-semibold">{assignment.soldier.name}</td>
+                        <td className="px-4 py-3 text-gray-400 font-mono text-xs tracking-wider">#{assignment.soldier.armyNumber}</td>
+                        <td className="px-4 py-3">
+                          <span className="text-gray-400 font-semibold bg-gray-950 px-2 py-1 rounded border border-gray-800 text-xs">
+                            {assignment.soldier.rank ?? "Unranked"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-300 font-mono text-xs">
+                          {new Date(assignment.startTime).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-gray-300 font-mono text-xs">
+                          {new Date(assignment.endTime).toLocaleString()}
+                        </td>
+                        {isAdmin && (
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => {
+                                setSelectedTask(null);
+                                setTaskAssignments([]);
+                                navigate(`/admin/soldier/${assignment.soldier._id}`);
+                              }}
+                              className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-gray-800/50 rounded"
+                              title="View Soldier Details"
+                            >
+                              <Eye size={14} />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ─── Helper Components ───────────────────────────────────────────────────────
+
+const MetricCard = ({ label, value, color, onClick, badge }: {
+  label: string;
+  value: number;
+  color: 'gray' | 'green' | 'blue' | 'amber';
+  onClick?: () => void;
+  badge?: number;
+}) => {
+  const bgClasses = {
+    gray: "bg-gray-800/40 border-gray-700 text-gray-200 hover:bg-gray-800/60",
+    green: "bg-green-900/30 border-green-800/50 text-green-300 hover:bg-green-900/50",
+    blue: "bg-blue-900/30 border-blue-800/50 text-blue-300 hover:bg-blue-900/50",
+    amber: "bg-amber-900/30 border-amber-800/50 text-amber-300 hover:bg-amber-900/50",
+  };
+
+  return (
+    <div
+      onClick={onClick}
+      className={`relative rounded-xl border p-4 transition-all cursor-pointer backdrop-blur-sm ${bgClasses[color]}`}
+    >
+      <p className="text-xs font-semibold tracking-widest uppercase opacity-80">{label}</p>
+      <div className="mt-2 flex items-end gap-2">
+        <span className="text-3xl font-black tracking-tighter">{value}</span>
+        {badge && (
+          <span className="ml-auto bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-md">
+            {badge}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const TaskTypeBox = ({ label, count, icon, color, onClick }: {
+  label: string;
+  count: number;
+  icon: React.ReactNode;
+  color: 'emerald' | 'blue' | 'purple';
+  onClick?: () => void;
+}) => {
+  const bgClasses = {
+    emerald: "bg-emerald-900/30 border-emerald-800/50 text-emerald-300 hover:bg-emerald-900/50",
+    blue: "bg-blue-900/30 border-blue-800/50 text-blue-300 hover:bg-blue-900/50",
+    purple: "bg-purple-900/30 border-purple-800/50 text-purple-300 hover:bg-purple-900/50",
+  };
+
+  return (
+    <div
+      className={`rounded-xl border p-4 ${bgClasses[color]} backdrop-blur-sm cursor-pointer transition-all duration-200 hover:scale-105`}
+      onClick={onClick}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <span className="opacity-80">{icon}</span>
+        <span className="text-xs font-semibold tracking-widest uppercase leading-tight line-clamp-2">{label}</span>
+      </div>
+      <p className="text-2xl font-bold">{count} <span className="text-xs font-normal tracking-wide ml-1">Soldiers</span></p>
     </div>
   );
 };
