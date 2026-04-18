@@ -11,7 +11,7 @@ export interface IUser extends Document {
   rank?: string;
   unit?: string;
   manager?:mongoose.Types.ObjectId;
-  status?: "active"  | "inactive";
+  status?: "pending" | "active" | "on_leave" | "inactive";
   password?: string;        
   createdAt?: Date;
   updatedAt?: Date;
