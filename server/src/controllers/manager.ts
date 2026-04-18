@@ -65,23 +65,42 @@ export const getAllSoldiers = async (req: AuthRequest, res: Response) => {
     const soldiers = await User.find({
       role: "soldier",
       manager: req.user!.id,
-      status: status || "active",
+      status: status || { $in: ["active", "on_leave"] },
     }).select("-password");
 
     const now = new Date();
 
     const soldiersWithStatus = await Promise.all(
       soldiers.map(async (soldier) => {
+        // Check for active assignment
         const activeAssignment = await Assignment.findOne({
           soldier: soldier._id,
           startTime: { $lte: now },
           endTime: { $gte: now },
+          $or: [
+            { status: { $in: ["active", "pending_review"] } },
+            { status: { $exists: false } },
+          ],
         }).populate("task", "title");
+
+        // Check for active approved leave
+        const activeLeave = await Leave.findOne({
+          soldier: soldier._id,
+          status: { $in: ["approved", "approved_by_manager"] },
+          startDate: { $lte: now },
+          endDate: { $gte: now },
+        });
 
         return {
           ...soldier.toJSON(),
           isBusy: !!activeAssignment,
           currentTask: activeAssignment?.task || null,
+          isOnLeave: !!activeLeave,
+          leaveDetails: activeLeave ? {
+            reason: activeLeave.reason,
+            startDate: activeLeave.startDate,
+            endDate: activeLeave.endDate
+          } : null
         };
       })
     );
@@ -374,23 +393,38 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
 
     const soldiers = await User.find({
       role: "soldier",
-      status: "active",
       manager: req.user!.id,
+      status: { $in: ["active", "on_leave"] },
     });
 
     const activeAssignments = await Assignment.find({
       startTime: { $lte: now },
       endTime: { $gte: now },
       manager: req.user!.id,
+      $or: [
+        { status: { $in: ["active", "pending_review"] } },
+        { status: { $exists: false } },
+      ],
     });
 
+    const activeLeaves = await Leave.find({
+      manager: req.user!.id,
+      status: { $in: ["approved", "approved_by_manager"] },
+      startDate: { $lte: now },
+      endDate: { $gte: now },
+    });
+
+    const onLeaveIds = new Set(activeLeaves.map(l => l.soldier.toString()));
     const busyIds = new Set(
-      activeAssignments.map((a) => a.soldier.toString())
+      activeAssignments
+        .filter(a => !onLeaveIds.has(a.soldier.toString()))
+        .map((a) => a.soldier.toString())
     );
 
+    const onLeave = onLeaveIds.size;
     const busy = busyIds.size;
     const total = soldiers.length;
-    const free = total - busy;
+    const free = total - busy - onLeave;
 
     res.status(200).json({
       success: true,
@@ -398,6 +432,7 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
         total,
         free,
         busy,
+        onLeave,
       },
     });
   } catch (err: any) {
