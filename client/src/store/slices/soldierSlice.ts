@@ -9,7 +9,13 @@ export interface Soldier {
   unit?: string;
   status: "pending" | "active" | "on_leave" | "inactive";
   isBusy?: boolean;
+  isOnLeave?: boolean;
   currentTask?: { title: string } | null;
+  leaveDetails?: {
+    reason: string;
+    startDate: string;
+    endDate: string;
+  } | null;
 }
 
 interface SoldierState {

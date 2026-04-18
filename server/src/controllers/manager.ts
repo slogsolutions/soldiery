@@ -60,12 +60,17 @@ export const createSoldier = async (req: AuthRequest, res: Response) => {
 
 export const getAllSoldiers = async (req: AuthRequest, res: Response) => {
   try {
-    const { status } = req.query;
+    const { status } = req.query as { status?: string };
+
+    // Fetch all operational soldiers (active or on_leave)
+    // We filter by the specific 'status' query below after computing the dynamic isOnLeave property
+    let dbQueryStatus: any = { $in: ["active", "on_leave"] };
+    if (status === "inactive") dbQueryStatus = "inactive";
 
     const soldiers = await User.find({
       role: "soldier",
       manager: req.user!.id,
-      status: status || { $in: ["active", "on_leave"] },
+      status: dbQueryStatus,
     }).select("-password");
 
     const now = new Date();
@@ -91,11 +96,13 @@ export const getAllSoldiers = async (req: AuthRequest, res: Response) => {
           endDate: { $gte: now },
         });
 
+        const isOnLeave = !!activeLeave;
+
         return {
           ...soldier.toJSON(),
           isBusy: !!activeAssignment,
           currentTask: activeAssignment?.task || null,
-          isOnLeave: !!activeLeave,
+          isOnLeave: isOnLeave,
           leaveDetails: activeLeave ? {
             reason: activeLeave.reason,
             startDate: activeLeave.startDate,
@@ -105,7 +112,15 @@ export const getAllSoldiers = async (req: AuthRequest, res: Response) => {
       })
     );
 
-    res.status(200).json({ success: true, data: soldiersWithStatus });
+    // Filter by logical status if requested
+    let finalData = soldiersWithStatus;
+    if (status === "on_leave") {
+      finalData = soldiersWithStatus.filter(s => s.isOnLeave);
+    } else if (status === "active") {
+      finalData = soldiersWithStatus.filter(s => !s.isOnLeave);
+    }
+
+    res.status(200).json({ success: true, data: finalData });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../../store/store";
 import {
@@ -9,7 +10,7 @@ import type { Soldier } from "../../store/slices/soldierSlice";
 import api from "../../api/axios";
 import { API_ROUTES } from "@/utils/constant";
 import Badge from "../../components/ui/Badge";
-import { AlertCircle, Filter, Users, ChevronRight, Activity, ShieldCheck } from "lucide-react";
+import { AlertCircle, Filter, Users, ChevronRight, Activity, ShieldCheck, Plus } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,7 +24,6 @@ const STATUS_OPTIONS: { value: SoldierStatus; label: string }[] = [
 
 const FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: "", label: "All Units" },
-  { value: "pending", label: "Pending Approval" },
   { value: "active", label: "Active" },
   { value: "on_leave", label: "On Leave" },
   { value: "inactive", label: "Inactive" },
@@ -52,6 +52,7 @@ const Avatar = ({ name, isBusy }: { name: string; isBusy: boolean }) => (
 
 const ManagerSoldiers = () => {
   const dispatch = useDispatch<AppDispatch>();
+  const navigate = useNavigate();
   const { soldiers, isLoading } = useSelector((s: RootState) => s.soldiers);
   const [filter, setFilter] = useState<string>("");
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -74,19 +75,7 @@ const ManagerSoldiers = () => {
     fetchSoldiers(filter);
   }, [filter]);
 
-  const handleApprove = async (id: string) => {
-    setApprovingId(id);
-    try {
-      const res = await api.patch<{ success: boolean; data: Soldier }>(
-        `${API_ROUTES.MANAGER}/soldiers/${id}/approve`
-      );
-      dispatch(updateSoldier(res.data.data));
-    } catch (err: unknown) {
-      alert(extractError(err));
-    } finally {
-      setApprovingId(null);
-    }
-  };
+
 
   const handleStatusChange = async (id: string, status: string) => {
     setUpdatingId(id);
@@ -103,7 +92,7 @@ const ManagerSoldiers = () => {
     }
   };
 
-  const pendingCount = soldiers.filter((s) => s.status === "pending").length;
+
 
   return (
     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
@@ -120,33 +109,34 @@ const ManagerSoldiers = () => {
           <p className="text-gray-400 text-sm mt-1">Manage and monitor all active personnel in your unit</p>
         </div>
         
-        <div className="flex flex-wrap items-center gap-2">
-           <Filter size={16} className="text-gray-600 mr-2" />
-           {FILTER_OPTIONS.map((o) => (
-             <button
-               key={o.value}
-               onClick={() => setFilter(o.value)}
-               className={`px-4 py-2 rounded-xl text-xs font-bold tracking-widest uppercase transition-all border ${
-                 filter === o.value 
-                   ? "bg-green-900/40 text-green-400 border-green-500/40 shadow-[0_0_15px_rgba(34,197,94,0.1)]" 
-                   : "bg-gray-900 text-gray-500 border-gray-800 hover:text-gray-300 hover:border-gray-700"
-               }`}
-             >
-               {o.label}
-             </button>
-           ))}
+        <div className="flex flex-wrap items-center gap-3">
+           <div className="flex items-center gap-1 bg-gray-900 border border-gray-800 rounded-xl px-2">
+             <Filter size={14} className="text-gray-600 ml-2" />
+             {FILTER_OPTIONS.map((o) => (
+               <button
+                 key={o.value}
+                 onClick={() => setFilter(o.value)}
+                 className={`px-4 py-2 rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all ${
+                   filter === o.value 
+                     ? "text-green-400" 
+                     : "text-gray-500 hover:text-gray-300"
+                 }`}
+               >
+                 {o.label}
+               </button>
+             ))}
+           </div>
+
+           <button
+             onClick={() => navigate("/manager/RegisterSoldier")}
+             className="bg-green-600 text-white text-xs px-4 py-2.5 rounded-xl hover:bg-green-500 font-bold transition-all shadow-lg shadow-green-900/20 flex items-center gap-2"
+           >
+             <Plus size={16} /> Register Soldier
+           </button>
         </div>
       </div>
 
-      {/* Pending Banner */}
-      {pendingCount > 0 && (
-        <div className="bg-orange-950/40 border border-orange-900/50 rounded-2xl p-4 flex items-center gap-3 backdrop-blur-sm animate-pulse-slow">
-          <AlertCircle className="text-orange-500 flex-shrink-0" size={20} />
-          <p className="text-orange-400/90 text-sm font-semibold tracking-wide">
-            HQ Alert: {pendingCount} new soldier account{pendingCount > 1 ? "s require" : " requires"} your authorization.
-          </p>
-        </div>
-      )}
+
 
       {/* Roster Table */}
       <div className="bg-gray-900/40 border border-gray-800/80 rounded-3xl overflow-hidden backdrop-blur-md shadow-2xl">
@@ -207,7 +197,11 @@ const ManagerSoldiers = () => {
                     {/* Operational Status (Job) */}
                     <td className="px-6 py-5">
                       {s.status === "active" ? (
-                        s.isBusy ? (
+                        s.isOnLeave ? (
+                          <span className="inline-flex items-center gap-1.5 text-amber-400 font-bold text-[10px] tracking-widest uppercase bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.05)]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_5px_#f59e0b]" /> ON LEAVE
+                          </span>
+                        ) : s.isBusy ? (
                           <div>
                             <span className="inline-flex items-center gap-1.5 text-blue-400 font-bold text-[10px] tracking-widest uppercase bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20 mb-1">
                                <Activity size={10} /> Deployed
@@ -227,32 +221,23 @@ const ManagerSoldiers = () => {
                     </td>
 
                     {/* Account Status */}
-                    <td className="px-6 py-5"><Badge status={s.status} /></td>
+                    <td className="px-6 py-5">
+                      <Badge status={s.isOnLeave ? "on_leave" : s.status} />
+                    </td>
 
                     {/* Directives/Actions */}
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-2">
-                        {s.status === "pending" ? (
-                          <button
-                            onClick={() => handleApprove(s._id)}
-                            disabled={approvingId === s._id}
-                            className="bg-green-600 text-white text-xs px-4 py-2 rounded-xl hover:bg-green-500 font-bold transition-all shadow-md shadow-green-900/20 flex items-center gap-1.5 group disabled:opacity-50"
-                          >
-                            <ShieldCheck size={14} className="group-hover:scale-110 transition-transform" />
-                            {approvingId === s._id ? "Processing..." : "Authorize"}
-                          </button>
-                        ) : (
-                          <select
-                            value={s.status}
-                            disabled={updatingId === s._id}
-                            onChange={(e) => handleStatusChange(s._id, e.target.value)}
-                            className="bg-gray-900 border border-gray-700 text-white text-xs font-semibold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-green-500/50 appearance-none disabled:opacity-50 transition-all cursor-pointer hover:border-gray-600"
-                          >
-                            {STATUS_OPTIONS.map((o) => (
-                              <option key={o.value} value={o.value}>{o.label}</option>
-                            ))}
-                          </select>
-                        )}
+                        <select
+                          value={s.status}
+                          disabled={updatingId === s._id}
+                          onChange={(e) => handleStatusChange(s._id, e.target.value)}
+                          className="bg-gray-900 border border-gray-700 text-white text-xs font-semibold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-green-500/50 appearance-none disabled:opacity-50 transition-all cursor-pointer hover:border-gray-600"
+                        >
+                          {STATUS_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
                       </div>
                     </td>
                   </tr>

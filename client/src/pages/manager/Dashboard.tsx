@@ -159,7 +159,7 @@ const ManagerDashboard = () => {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<'free' | 'busy' | 'onleave' | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<'free' | 'busy' | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [taskAssignments, setTaskAssignments] = useState<Assignment[]>([]);
 
@@ -273,7 +273,7 @@ const ManagerDashboard = () => {
       label: "On Leave",
       value: onLeaveCount,
       color: "#f59e0b",
-      onClick: () => setSelectedCategory('onleave')
+      onClick: () => navigate("/manager/leaves")
     },
   ].filter((d) => d.value > 0);
 
@@ -287,8 +287,6 @@ const ManagerDashboard = () => {
           return !soldier.isBusy && !soldier.isOnLeave;
         case 'busy':
           return soldier.isBusy;
-        case 'onleave':
-          return soldier.isOnLeave;
         default:
           return true;
       }
@@ -434,7 +432,7 @@ const ManagerDashboard = () => {
               label="TOTAL"
               value={total}
               color="gray"
-              onClick={() => setSelectedCategory(null)}
+              onClick={() => navigate("/manager/soldiers")}
             />
             <MetricCard
               label="FREE"
@@ -452,7 +450,7 @@ const ManagerDashboard = () => {
               label="ON LEAVE"
               value={onLeaveCount}
               color="amber"
-              onClick={() => setSelectedCategory('onleave')}
+              onClick={() => navigate("/manager/leaves")}
               badge={pendingLeaves > 0 ? pendingLeaves : undefined}
             />
           </div>
@@ -463,9 +461,7 @@ const ManagerDashboard = () => {
       {selectedCategory && (
         <Modal
           title={`${
-            selectedCategory === 'free' ? 'Free Units' :
-            selectedCategory === 'busy' ? 'Deployed / On Duty' :
-            'On Leave'
+            selectedCategory === 'free' ? 'Free Units' : 'Deployed / On Duty'
           } - ${filteredSoldiers.length} Soldiers`}
           onClose={() => setSelectedCategory(null)}
           size="xl"
