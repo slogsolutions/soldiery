@@ -56,9 +56,18 @@ const Sidebar = () => {
           <div className="w-10 h-10 rounded-xl bg-green-900/40 border border-green-800 flex items-center justify-center text-green-500 shadow-inner">
              <ShieldAlert size={20} />
           </div>
-          <div>
-            <h2 className="text-white font-bold tracking-widest leading-none text-sm uppercase">Soldierly</h2>
-            <span className="text-[10px] text-green-400 font-mono tracking-widest uppercase">{user.role} PANEL</span>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-white font-bold tracking-wide leading-none text-sm truncate">{user.name}</h2>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[10px] text-green-400 font-mono tracking-widest uppercase bg-green-900/20 px-2 py-0.5 rounded border border-green-800/30">
+                #{user.armyNumber}
+              </span>
+              {user.unit && (
+                <span className="text-[10px] text-blue-400 font-mono tracking-widest uppercase bg-blue-900/20 px-2 py-0.5 rounded border border-blue-800/30">
+                  {user.unit}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -89,15 +98,6 @@ const Sidebar = () => {
       </nav>
 
       <div className="p-4 border-t border-gray-800/50">
-        <div className="bg-gray-900/60 rounded-xl p-4 mb-4 border border-gray-800 backdrop-blur-sm">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-mono">Operations</span>
-            <span className="text-white font-bold text-sm tracking-wide truncate">{user.name}</span>
-            <span className="text-xs text-green-400/80 font-mono bg-gray-950 px-2 py-1 rounded inline-block w-fit mt-1 border border-gray-800 shadow-inner">
-               #{user.armyNumber}
-            </span>
-          </div>
-        </div>
         <button
            onClick={handleLogout}
            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-red-400/90 hover:bg-red-950/40 hover:text-red-300 transition-all duration-300 border border-transparent hover:border-red-900/50 font-semibold tracking-wide text-sm"
