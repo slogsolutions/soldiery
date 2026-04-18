@@ -563,19 +563,7 @@ const ManagerDashboard = () => {
                                   <Eye size={14} />
                                 </button>
                               )}
-                              {!soldier.isOnLeave && (
-                                <button
-                                  onClick={() => {
-                                    setSelectedCategory(null);
-                                    navigate(isAdmin ? `/admin/leave/${soldier._id}` : `/manager/leave/${soldier._id}`);
-                                  }}
-                                  className="inline-flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors px-3 py-2 hover:bg-amber-900/20 rounded-lg border border-amber-900/30"
-                                  title="Apply for Leave"
-                                >
-                                  <ArrowLeft size={14} />
-                                  <span className="text-xs uppercase tracking-[0.2em] font-bold">Leave</span>
-                                </button>
-                              )}
+
                               <button
                                 onClick={() => {
                                   setSelectedCategory(null);
