@@ -43,7 +43,7 @@ const userSchema = new Schema<IUser>(
     status: {
       type: String,
       enum: ["pending","active", "on_leave", "inactive"],
-      default: "pending",
+      default: "active",
     },
     password :{ type: String, required:true, select: false },
   },
