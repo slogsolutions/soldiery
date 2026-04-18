@@ -57,7 +57,52 @@ export const applyLeave = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// Get My Leaves
+// Manager Apply Leave for Soldier
+export const managerApplyLeave = async (req: AuthRequest, res: Response) => {
+  try {
+    const { soldier, reason, startDate, endDate, originalDays } = req.body;
+
+    if (!soldier || !reason || !startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: "soldier, reason, startDate and endDate are required",
+      });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (end <= start) {
+      return res.status(400).json({
+        success: false,
+        message: "endDate must be after startDate",
+      });
+    }
+
+    const days = originalDays || calcDays(start, end);
+
+    const leave = await Leave.create({
+      soldier: soldier,
+      manager: req.user!.id, // Manager is applying for the soldier
+      reason,
+      startDate: start,
+      endDate: end,
+      originalDays: days,
+      finalDays: days,
+      status: "pending",
+      createdBy: "manager",
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Leave applied successfully for soldier",
+      data: leave,
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+};
+// Get My Leaves (Soldier)
 export const getMyLeaves = async (req: AuthRequest, res: Response) => {
   try {
     const leaves = await Leave.find({

@@ -286,11 +286,12 @@ const getStatus = (start: Date, end: Date) => {
 
 export const getAllAssignments = async (req: AuthRequest,res: Response) => {
   try {
-    const { soldierId } = req.query;
+    const { soldierId, task } = req.query;
 
     const assignments = await Assignment.find({
       manager: req.user!.id,
       ...(soldierId && { soldier: soldierId }),
+      ...(task && { task: task }),
     })
       .populate("soldier", "name rank armyNumber")
       .populate("task", "title")

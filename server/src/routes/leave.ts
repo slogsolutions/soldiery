@@ -5,6 +5,7 @@ import {
   applyLeave,
   getMyLeaves,
 
+  managerApplyLeave,
   getManagerLeaves,
   approveLeaveByManager,
   rejectLeaveByManager,
@@ -36,6 +37,7 @@ const managerRouter = Router();
 
 managerRouter.use(protect, restrictTo("manager"));
 
+managerRouter.post("/apply", managerApplyLeave);
 managerRouter.get("/leaves", getManagerLeaves);
 managerRouter.patch("/leaves/:id/approve", approveLeaveByManager);
 managerRouter.patch("/leaves/:id/reject", rejectLeaveByManager);

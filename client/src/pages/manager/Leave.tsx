@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useParams, useNavigate } from "react-router-dom";
 import type { AppDispatch, RootState } from "../../store/store";
 import {
   setLeaves,
@@ -177,6 +178,8 @@ const EditForm = ({
 
 const ManagerLeaves = () => {
   const dispatch = useDispatch<AppDispatch>();
+  const navigate = useNavigate();
+  const { id: soldierId } = useParams<{ id: string }>();
   const { leaves, isLoading } = useSelector((s: RootState) => s.leaves);
   const [filter, setFilter] = useState("all");
   
@@ -184,6 +187,16 @@ const ManagerLeaves = () => {
   const [activeModal, setActiveModal] = useState<"approve" | "reject" | "edit" | "send-to-admin" | null>(null);
   const [selectedLeave, setSelectedLeave] = useState<Leave | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Apply leave form state
+  const [showApplyForm, setShowApplyForm] = useState(false);
+  const [applyFormData, setApplyFormData] = useState({
+    startDate: "",
+    endDate: "",
+    reason: "",
+    originalDays: 0
+  });
+  const [soldier, setSoldier] = useState<any>(null);
 
   const fetchLeaves = async () => {
     dispatch(setLeaveLoading(true));
@@ -197,8 +210,60 @@ const ManagerLeaves = () => {
 
   useEffect(() => {
     fetchLeaves();
-  }, []);
+    
+    // If soldierId is present, fetch soldier data and show apply form
+    if (soldierId) {
+      fetchSoldierData();
+      setShowApplyForm(true);
+    }
+  }, [soldierId]);
 
+  const fetchSoldierData = async () => {
+    try {
+      const res = await api.get(`/api/manager/soldiers/${soldierId}`);
+      if (res.data.success) {
+        setSoldier(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch soldier data:', err);
+    }
+  };
+
+  const handleApplyLeave = async () => {
+    if (!soldier || !applyFormData.startDate || !applyFormData.endDate || !applyFormData.reason.trim()) return;
+
+    setActionLoading(true);
+    try {
+      const startDate = new Date(applyFormData.startDate);
+      const endDate = new Date(applyFormData.endDate);
+      const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+      const leaveData = {
+        soldier: soldier._id,
+        startDate: applyFormData.startDate,
+        endDate: applyFormData.endDate,
+        originalDays: daysDiff,
+        reason: applyFormData.reason,
+        manager: null // Will be set by backend
+      };
+
+      const res = await api.post('/api/leaves/manager/apply', leaveData);
+      
+      if (res.data.success) {
+        // Reset form and close modal
+        setApplyFormData({ startDate: "", endDate: "", reason: "", originalDays: 0 });
+        setShowApplyForm(false);
+        if (soldierId) navigate('/manager/leaves');
+        
+        // Refresh leaves list
+        fetchLeaves();
+      }
+    } catch (err: any) {
+      console.error('Failed to apply leave:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
   const handleAction = async (type: string, data?: any) => {
     if (!selectedLeave) return;
     setActionLoading(true);
@@ -395,6 +460,83 @@ const ManagerLeaves = () => {
       {activeModal === "edit" && selectedLeave && (
         <Modal title="Revise Request Parameters" onClose={() => setActiveModal(null)} size="md">
           <EditForm leave={selectedLeave} onConfirm={(data) => handleAction("edit", data)} onCancel={() => setActiveModal(null)} loading={actionLoading} />
+        </Modal>
+      )}
+
+      {/* Apply Leave Form Modal */}
+      {showApplyForm && soldier && (
+        <Modal 
+          title={`Apply Leave for ${soldier.name}`} 
+          onClose={() => {
+            setShowApplyForm(false);
+            if (soldierId) navigate('/manager/leaves');
+          }} 
+          size="md"
+        >
+          <div className="space-y-4">
+            <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-900/40 border border-blue-800 flex items-center justify-center text-blue-400">
+                  <User size={20} />
+                </div>
+                <div>
+                  <p className="font-bold text-white">{soldier.name}</p>
+                  <p className="text-xs text-gray-400">#{soldier.armyNumber} • {soldier.rank || 'Unranked'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1.5 tracking-widest uppercase">Start Date *</label>
+                <input
+                  type="date"
+                  value={applyFormData.startDate}
+                  onChange={(e) => setApplyFormData(prev => ({ ...prev, startDate: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 mb-1.5 tracking-widest uppercase">End Date *</label>
+                <input
+                  type="date"
+                  value={applyFormData.endDate}
+                  onChange={(e) => setApplyFormData(prev => ({ ...prev, endDate: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500/50"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-400 mb-1.5 tracking-widest uppercase">Reason *</label>
+              <textarea
+                value={applyFormData.reason}
+                onChange={(e) => setApplyFormData(prev => ({ ...prev, reason: e.target.value }))}
+                placeholder="Enter leave reason..."
+                rows={3}
+                className="w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500/50 resize-none"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={() => {
+                  setShowApplyForm(false);
+                  if (soldierId) navigate('/manager/leaves');
+                }}
+                className="flex-1 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl transition-all font-semibold text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyLeave}
+                disabled={!applyFormData.startDate || !applyFormData.endDate || !applyFormData.reason.trim() || actionLoading}
+                className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-xl transition-all font-semibold text-sm"
+              >
+                {actionLoading ? "Submitting..." : "Apply Leave"}
+              </button>
+            </div>
+          </div>
         </Modal>
       )}
 
