@@ -187,7 +187,6 @@ const AdminDashboard = () => {
           label="On Duty (Global)" 
           value={data.busy} 
           color="green" 
-          onClick={() => setSelectedCategory('busy')}
         />
         <MetricCard 
           label="On Leave (Global)" 
