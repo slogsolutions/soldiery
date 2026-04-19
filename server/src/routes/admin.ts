@@ -7,6 +7,7 @@ import {
   getAllSoldiers,
   getUser,
   editUser,
+  deleteUser,
 
   // leave
   getAdminLeaves,
@@ -20,6 +21,7 @@ import {
 
   // tasks
   getAdminTasks,
+  getAdminDashboard,
 
   // assignments
   createAdminAssignment,
@@ -36,12 +38,14 @@ router.use(protect, restrictTo("admin"));
 router.post("/managers", createManager);
 
 router.get("/managers", getAllManagers);
+router.get("/dashboard", getAdminDashboard);
 
 router.get("/soldiers", getAllSoldiers);
 
 router.get("/users/:id", getUser);
 
 router.patch("/users/:id", editUser);
+router.delete("/users/:id", deleteUser);
 
 // ─────────────────────────────
 // LEAVE MANAGEMENT

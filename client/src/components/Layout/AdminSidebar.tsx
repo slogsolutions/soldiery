@@ -1,12 +1,14 @@
 import { LayoutDashboard, UserPlus, LogOut, Shield, Clock } from "lucide-react";
 import { useLocation, Link, useNavigate } from "react-router-dom";
-import { useDispatch } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { logout } from "../../store/slices/authSlice";
+import type { RootState } from "../../store/store";
 
 const AdminSidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const { user } = useSelector((s: RootState) => s.auth);
 
   const menu = [
     { label: "Dashboard", path: "/admin/dashboard", icon: LayoutDashboard },
@@ -27,9 +29,14 @@ const AdminSidebar = () => {
           <div className="bg-gradient-to-br from-gray-800 to-gray-900 p-2.5 rounded-xl border border-gray-700 shadow-inner group">
             <Shield size={24} className="text-green-500 group-hover:scale-110 transition-transform duration-300" />
           </div>
-          <div>
-            <h2 className="text-xl font-black text-white tracking-widest uppercase">Admin</h2>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-green-500/80 font-bold font-mono">System Root</p>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-bold text-white leading-tight break-words">{user?.name || 'Admin'}</h2>
+            <div className="flex flex-col mt-1">
+              <p className="text-[10px] uppercase tracking-widest text-green-500 font-bold font-mono">#{user?.armyNumber || 'ROOT'}</p>
+              <p className="text-[9px] uppercase tracking-tighter text-gray-500 font-bold mt-0.5">
+                {user?.rank || 'HQ ADMIN'} {user?.unit ? `· ${user.unit}` : ''}
+              </p>
+            </div>
           </div>
         </div>
       </div>

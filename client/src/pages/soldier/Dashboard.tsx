@@ -133,11 +133,6 @@ const MyTasksTab = () => {
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-4">
                 <div className="flex-1">
                   <h3 className="font-bold text-white text-base tracking-wide">{a.task?.title}</h3>
-                  <p className="text-xs text-gray-500 mt-1 font-mono">
-                    {a.createdBy === "manager"
-                      ? `Assigned by: ${a.assignedBy?.name ?? "Manager"}`
-                      : "Self-assigned"}
-                  </p>
                 </div>
                 <Badge status={a.status} />
               </div>
@@ -183,8 +178,9 @@ const MyTasksTab = () => {
                 </div>
               )}
               {a.status === "completed" && (
-                <div className="mt-4 p-3 bg-green-950/30 border border-green-900/40 rounded-xl">
-                  <p className="text-green-400 text-xs font-semibold">✅ Mission complete — officially verified</p>
+                <div className="mt-4 flex items-center gap-2 text-green-500/80 px-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e]" />
+                  <p className="text-[10px] uppercase font-black tracking-widest italic opacity-60">Objective Secured</p>
                 </div>
               )}
             </div>

@@ -72,10 +72,12 @@ export const getAllSoldiers = async (req: AuthRequest, res: Response) => {
       .select("-password")
       .populate("manager", "name rank unit armyNumber");
 
-    // Add leave status for each soldier
-    const soldiersWithLeaveStatus = await Promise.all(
+    // Add leave and assignment status for each soldier
+    const soldiersWithFullStatus = await Promise.all(
       soldiers.map(async (soldier) => {
         const currentDate = new Date();
+        
+        // 1. Check for active leave
         const activeLeave = await Leave.findOne({
           soldier: soldier._id,
           status: { $in: ["approved", "approved_by_manager"] },
@@ -83,9 +85,22 @@ export const getAllSoldiers = async (req: AuthRequest, res: Response) => {
           endDate: { $gte: currentDate }
         });
 
+        // 2. Check for active assignment
+        const activeAssignment = await Assignment.findOne({
+          soldier: soldier._id,
+          startTime: { $lte: currentDate },
+          endTime: { $gte: currentDate },
+          $or: [
+            { status: { $in: ["active", "pending_review"] } },
+            { status: { $exists: false } },
+          ],
+        }).populate("task", "title");
+
         return {
           ...soldier.toObject(),
           isOnLeave: !!activeLeave,
+          isBusy: !!activeAssignment,
+          currentTask: activeAssignment?.task || null,
           leaveDetails: activeLeave ? {
             reason: activeLeave.reason,
             startDate: activeLeave.startDate,
@@ -98,8 +113,79 @@ export const getAllSoldiers = async (req: AuthRequest, res: Response) => {
 
     res.status(200).json({
       success: true,
-      count: soldiersWithLeaveStatus.length,
-      data: soldiersWithLeaveStatus,
+      count: soldiersWithFullStatus.length,
+      data: soldiersWithFullStatus,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── Get Admin Dashboard (System-wide Aggregates) ───────────────────────────
+export const getAdminDashboard = async (req: AuthRequest, res: Response) => {
+  try {
+    const now = new Date();
+
+    // 1. Total Counts
+    const totalManagers = await User.countDocuments({ role: "manager", status: "active" });
+    const totalSoldiers = await User.countDocuments({ 
+      role: "soldier", 
+      status: { $in: ["active", "on_leave"] } 
+    });
+
+    // 2. Active Leaves
+    const activeLeaves = await Leave.find({
+      status: { $in: ["approved", "approved_by_manager"] },
+      startDate: { $lte: now },
+      endDate: { $gte: now },
+    }).distinct("soldier");
+
+    const onLeaveIds = new Set(activeLeaves.map(id => id.toString()));
+
+    // 3. Active Assignments
+    const activeAssignments = await Assignment.find({
+      startTime: { $lte: now },
+      endTime: { $gte: now },
+      $or: [
+        { status: { $in: ["active", "pending_review"] } },
+        { status: { $exists: false } },
+      ],
+    }).populate("task", "title type");
+
+    // Only count as busy if soldier has active assignment AND is not on leave
+    const busyIds = new Set();
+    const taskBreakdown: Record<string, { count: number; title: string; type?: string }> = {};
+
+    activeAssignments.forEach(assignment => {
+      const soldierId = assignment.soldier.toString();
+      if (!onLeaveIds.has(soldierId)) {
+        busyIds.add(soldierId);
+        
+        // Aggregate task stats
+        const task = assignment.task as any;
+        if (task) {
+          if (!taskBreakdown[task._id]) {
+            taskBreakdown[task._id] = { count: 0, title: task.title, type: task.type };
+          }
+          taskBreakdown[task._id].count++;
+        }
+      }
+    });
+
+    const busy = busyIds.size;
+    const onLeave = onLeaveIds.size;
+    const free = totalSoldiers - busy - onLeave;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalManagers,
+        totalSoldiers,
+        free,
+        busy,
+        onLeave,
+        taskBreakdown: Object.values(taskBreakdown)
+      },
     });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
@@ -168,6 +254,33 @@ export const editUser = async (req: AuthRequest, res: Response) => {
       success: true,
       message: "User updated successfully",
       data: updated,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─── Delete user ─────────────────────────────────────────────────────────────
+export const deleteUser = async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (user.role === "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Cannot delete admin accounts",
+      });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+
+    res.status(200).json({
+      success: true,
+      message: `${user.role.charAt(0).toUpperCase() + user.role.slice(1)} deleted successfully`,
     });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });

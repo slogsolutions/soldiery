@@ -17,8 +17,12 @@ export const getMyAssignments = async (
   res: Response
 ) => {
   try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const assignments = await Assignment.find({
       soldier: req.user!.id,
+      endTime: { $gte: today },
     })
       .populate("task", "title description")
       .sort({ startTime: 1 });
