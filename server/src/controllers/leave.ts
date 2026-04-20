@@ -254,7 +254,7 @@ export const editLeaveByManager = async (
   res: Response
 ) => {
   try {
-    const { finalDays, managerNote } = req.body;
+    const { finalDays, managerNote, endDate } = req.body;
 
     const leave = await Leave.findOne({
       _id: req.params.id,
@@ -265,19 +265,32 @@ export const editLeaveByManager = async (
       return res.status(404).json({ message: "Leave not found" });
     }
 
-    if (leave.status !== "pending") {
+    if (!["pending", "approved"].includes(leave.status)) {
       return res.status(400).json({
-        message: "Only pending leaves can be edited",
+        message: "Only pending or approved leaves can be edited",
       });
     }
 
-    if (finalDays !== undefined) {
+    if (endDate) {
+      const start = new Date(leave.startDate);
+      const end = new Date(endDate);
+      
+      if (end < start) {
+        return res.status(400).json({
+           message: "End date cannot be prior to the start date",
+        });
+      }
+      leave.endDate = end;
+      const days = calcDays(start, end);
+      leave.finalDays = days > 0 ? days : 1;
+    } else if (finalDays !== undefined) {
       if (finalDays <= 0) {
         return res.status(400).json({
           message: "finalDays must be greater than 0",
         });
       }
       leave.finalDays = finalDays;
+      // Optionally adjust endDate based on finalDays, but endDate is exact so letting finalDays ride alone is fragile if they decouple. We will rely on endDate passing.
     }
 
     if (managerNote !== undefined) {
@@ -288,7 +301,7 @@ export const editLeaveByManager = async (
 
     res.status(200).json({
       success: true,
-      message: "Leave updated",
+      message: "Leave updated successfully",
       data: leave,
     });
   } catch (err: any) {

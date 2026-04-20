@@ -212,39 +212,6 @@ const AdminSoldierDetail = () => {
         </div>
       </div>
 
-      {/* Additional Info */}
-      <div className="bg-gray-900/40 border border-gray-800/80 rounded-2xl p-6 backdrop-blur-md">
-        <div className="flex items-center gap-3 mb-4">
-          <Calendar className="w-6 h-6 text-orange-400" />
-          <h3 className="text-lg font-bold text-white tracking-wide">Service Information</h3>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <p className="text-gray-400 text-xs uppercase tracking-widest font-medium mb-2">Date of Enlistment</p>
-            <p className="text-white">
-              {soldier.createdAt ? new Date(soldier.createdAt).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              }) : 'Unknown'}
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-400 text-xs uppercase tracking-widest font-medium mb-2">Service Duration</p>
-            <p className="text-white">
-              {soldier.createdAt ? (() => {
-                const enlistDate = new Date(soldier.createdAt!);
-                const now = new Date();
-                const diffTime = Math.abs(now.getTime() - enlistDate.getTime());
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                const years = Math.floor(diffDays / 365);
-                const months = Math.floor((diffDays % 365) / 30);
-                return `${years} year${years !== 1 ? 's' : ''}, ${months} month${months !== 1 ? 's' : ''}`;
-              })() : 'Unknown'}
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

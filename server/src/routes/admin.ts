@@ -24,6 +24,7 @@ import {
   getAdminDashboard,
 
   // assignments
+  getAdminAssignments,
   createAdminAssignment,
 } from "../controllers/admin";
 
@@ -64,6 +65,7 @@ router.get("/tasks", getAdminTasks);
 // ─────────────────────────────
 // ASSIGNMENT MANAGEMENT
 // ─────────────────────────────
+router.get("/assignments", getAdminAssignments);
 router.post("/assignments", createAdminAssignment);
 
 // ─────────────────────────────
@@ -72,5 +74,9 @@ router.post("/assignments", createAdminAssignment);
 router.get("/managers/:id/dashboard", getManagerOverviewDashboard);
 router.get("/managers/:id/soldiers", getManagerOverviewSoldiers);
 router.get("/managers/:id/leaves", getManagerOverviewLeaves);
+
+// admin mirror for manager tasks/assignments
+router.get("/managers/:id/tasks", getAdminTasks);
+router.get("/managers/:id/assignments", getAdminAssignments);
 
 export default router;

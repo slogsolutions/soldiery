@@ -10,7 +10,7 @@ import {
 import api from "../../api/axios";
 import { useSelector } from "react-redux";
 import type { RootState } from "../../store/store";
-import { ShieldAlert, Users, FolderClock, Activity, ArrowLeft, Eye, Plus, Dumbbell, Footprints } from "lucide-react";
+import { ShieldAlert, Users, FolderClock, Activity, ArrowLeft, Eye, Plus, Dumbbell, Footprints, Shield } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import Modal from "../../components/ui/Modal";
 
@@ -159,7 +159,7 @@ const ManagerDashboard = () => {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<'free' | 'busy' | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<'free' | 'busy' | 'on_leave' | 'total' | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [taskAssignments, setTaskAssignments] = useState<Assignment[]>([]);
 
@@ -191,8 +191,8 @@ const ManagerDashboard = () => {
       if (taskRes.status === "fulfilled" && taskRes.value.data.success) {
         setTasks(taskRes.value.data.data);
       }
-    } catch (err: any) {
-      setError(err.message || "Something went wrong fetching data.");
+    } catch (err: unknown) {
+      setError((err as Error).message || "Something went wrong fetching data.");
     } finally {
       setLoading(false);
     }
@@ -242,11 +242,14 @@ const ManagerDashboard = () => {
 
   const fetchTaskAssignments = async (taskId: string) => {
     try {
-      const response = await api.get(`/api/manager/assignments?task=${taskId}`);
+      const endpoint = id 
+        ? `/api/admin/managers/${id}/assignments?task=${taskId}` 
+        : `/api/manager/assignments?task=${taskId}`;
+      const response = await api.get(endpoint);
       if (response.data.success) {
         setTaskAssignments(response.data.data);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to fetch task assignments:', err);
     }
   };
@@ -273,20 +276,30 @@ const ManagerDashboard = () => {
       label: "On Leave",
       value: onLeaveCount,
       color: "#f59e0b",
-      onClick: () => navigate("/manager/leaves")
+      onClick: () => setSelectedCategory('on_leave')
     },
   ].filter((d) => d.value > 0);
 
   const hasAnyData = total > 0;
 
   const getFilteredSoldiers = () => {
-    if (!selectedCategory) return soldiers;
+    if (!selectedCategory) return [];
+    
     return soldiers.filter(soldier => {
+      // Robust check for various status formats
+      const isActuallyOnLeave = soldier.isOnLeave === true || soldier.status === 'on_leave';
+      const isActuallyBusy = soldier.isBusy === true || soldier.status === 'busy' || !!soldier.currentTask;
+      const isActuallyFree = !isActuallyOnLeave && !isActuallyBusy;
+
       switch (selectedCategory) {
-        case 'free':
-          return !soldier.isBusy && !soldier.isOnLeave;
+        case 'on_leave':
+          return isActuallyOnLeave;
         case 'busy':
-          return soldier.isBusy;
+          return isActuallyBusy;
+        case 'free':
+          return isActuallyFree;
+        case 'total':
+          return true;
         default:
           return true;
       }
@@ -296,6 +309,18 @@ const ManagerDashboard = () => {
   const filteredSoldiers = getFilteredSoldiers();
   const taskCounts = useDynamicTaskCounts(soldiers, tasks);
   const isAdmin = user?.role === 'admin';
+
+  const taskPieData: PieSlice[] = Object.entries(taskCounts)
+    .filter(([_, { count }]) => count > 0)
+    .map(([taskId, { count, task }], index) => {
+      const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
+      return {
+        label: task.title.toUpperCase(),
+        value: count,
+        color: colors[index % colors.length],
+        onClick: () => handleTaskClick(task) // using same click handler to show task modal
+      };
+    });
 
   return (
     <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-700">
@@ -313,6 +338,32 @@ const ManagerDashboard = () => {
             </button>
           ) : (
             <div />
+          )}
+          {id && managerInfo && (
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <Shield size={18} className="text-blue-400" />
+                <h1 className="text-2xl font-black text-white tracking-tight">
+                  {managerInfo.name} <span className="text-gray-500 font-medium ml-2 text-sm">/ {managerInfo.rank || 'OFFICER'}</span>
+                </h1>
+              </div>
+              <p className="text-gray-400 text-xs font-mono mt-1 uppercase tracking-widest">
+                Unit: <span className="text-blue-300 font-bold">{managerInfo.unit || 'Global Command'}</span> · #{managerInfo.armyNumber}
+              </p>
+            </div>
+          )}
+          {!id && user && (
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <Shield size={18} className="text-green-400" />
+                <h1 className="text-2xl font-black text-white tracking-tight uppercase">
+                  {user.name} <span className="text-gray-500 font-medium ml-2 text-sm">/ COMMANDER</span>
+                </h1>
+              </div>
+              <p className="text-gray-500 text-xs font-mono mt-1 uppercase tracking-widest">
+                 Commanding Unit: <span className="text-green-500 font-bold">{user.unit || 'Direct Ops'}</span>
+              </p>
+            </div>
           )}
         </div>
         <div className="flex items-center gap-3">
@@ -385,8 +436,59 @@ const ManagerDashboard = () => {
           </div>
         </div>
 
-        {/* Right Column: Big Panel with Tasks & Metrics */}
+        {/* Right Column: Duty Breakdown Pie Chart */}
         <div className="bg-gray-900/40 border border-gray-800/80 rounded-3xl p-6 backdrop-blur-md relative overflow-hidden flex flex-col">
+          <h3 className="text-lg font-bold text-white tracking-wide mb-2">Duty Task Breakdown</h3>
+          <p className="text-xs text-gray-400 font-mono mb-6">Breakdown of actively deployed personnel</p>
+          <p className="text-gray-400 text-xs text-center mb-4">Click on a section to view personnel</p>
+
+          <div className="flex-1 flex flex-col items-center justify-center min-h-[300px]">
+            {taskPieData.length === 0 ? (
+              <div className="text-center text-gray-500">
+                <Activity size={48} className="mx-auto mb-3 opacity-30" />
+                <p className="text-sm font-bold tracking-wider">NO ACTIVE TASKS</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie
+                    data={taskPieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={105}
+                    paddingAngle={5}
+                    dataKey="value"
+                    nameKey="label"
+                    stroke="none"
+                    isAnimationActive={true}
+                    onClick={(data) => data?.onClick?.()}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {taskPieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} style={{ cursor: 'pointer' }} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend
+                    onClick={(entry) => {
+                      const slice = taskPieData.find(d => d.label === entry.value);
+                      slice?.onClick?.();
+                    }}
+                    formatter={(value: string) => (
+                      <span className="text-sm text-gray-300 font-medium ml-2 tracking-wide cursor-pointer">{value}</span>
+                    )}
+                    wrapperStyle={{ paddingTop: "20px", cursor: 'pointer' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Row 2: Big Panel with Tasks & Metrics */}
+      <div className="bg-gray-900/40 border border-gray-800/80 rounded-3xl p-6 backdrop-blur-md relative overflow-hidden flex flex-col mt-8">
           <h3 className="text-lg font-bold text-white tracking-wide mb-2">Deployment Status</h3>
           <p className="text-xs text-gray-400 font-mono mb-6">{total} soldiers total</p>
 
@@ -427,12 +529,12 @@ const ManagerDashboard = () => {
           </div>
 
           {/* Four metric cards */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <MetricCard
               label="TOTAL"
               value={total}
               color="gray"
-              onClick={() => navigate("/manager/soldiers")}
+              onClick={() => setSelectedCategory('total')}
             />
             <MetricCard
               label="FREE"
@@ -450,18 +552,19 @@ const ManagerDashboard = () => {
               label="ON LEAVE"
               value={onLeaveCount}
               color="amber"
-              onClick={() => navigate("/manager/leaves")}
-              badge={pendingLeaves > 0 ? pendingLeaves : undefined}
+              onClick={() => setSelectedCategory('on_leave')}
+              badge={(!id && pendingLeaves > 0) ? pendingLeaves : undefined}
             />
           </div>
         </div>
-      </div>
 
       {/* Filtered Soldiers Modal */}
       {selectedCategory && (
         <Modal
           title={`${
-            selectedCategory === 'free' ? 'Free Units' : 'Deployed / On Duty'
+            selectedCategory === 'free' ? 'Free Units' : 
+            selectedCategory === 'busy' ? 'Deployed / On Duty' :
+            selectedCategory === 'on_leave' ? 'On Leave' : 'Total Soldiers'
           } - ${filteredSoldiers.length} Soldiers`}
           onClose={() => setSelectedCategory(null)}
           size="xl"

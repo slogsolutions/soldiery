@@ -6,6 +6,7 @@ interface ModalProps {
   onClose: () => void;
   children: React.ReactNode;
   size?: "sm" | "md" | "lg" | "xl";
+  centerToContent?: boolean;
 }
 
 const sizeClasses = {
@@ -15,7 +16,7 @@ const sizeClasses = {
   xl: "max-w-4xl",
 };
 
-const Modal = ({ title, onClose, children, size = "md" }: ModalProps) => {
+const Modal = ({ title, onClose, children, size = "md", centerToContent = true }: ModalProps) => {
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Close on Escape key
@@ -34,7 +35,7 @@ const Modal = ({ title, onClose, children, size = "md" }: ModalProps) => {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6">
+    <div className={`fixed inset-0 z-[40] flex items-center justify-center p-4 md:p-6 ${centerToContent ? 'md:pl-72' : ''}`}>
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-gray-950/80 backdrop-blur-sm"

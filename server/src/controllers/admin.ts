@@ -100,7 +100,11 @@ export const getAllSoldiers = async (req: AuthRequest, res: Response) => {
           ...soldier.toObject(),
           isOnLeave: !!activeLeave,
           isBusy: !!activeAssignment,
-          currentTask: activeAssignment?.task || null,
+          currentTask: activeAssignment ? {
+            title: (activeAssignment.task as any).title,
+            startTime: activeAssignment.startTime,
+            endTime: activeAssignment.endTime
+          } : null,
           leaveDetails: activeLeave ? {
             reason: activeLeave.reason,
             startDate: activeLeave.startDate,
@@ -128,10 +132,13 @@ export const getAdminDashboard = async (req: AuthRequest, res: Response) => {
 
     // 1. Total Counts
     const totalManagers = await User.countDocuments({ role: "manager", status: "active" });
-    const totalSoldiers = await User.countDocuments({ 
+    const activeSoldiers = await User.find({ 
       role: "soldier", 
       status: { $in: ["active", "on_leave"] } 
-    });
+    }).select("_id");
+    const totalSoldiers = activeSoldiers.length;
+    
+    const validSoldierIds = new Set(activeSoldiers.map(s => s._id.toString()));
 
     // 2. Active Leaves
     const activeLeaves = await Leave.find({
@@ -140,7 +147,11 @@ export const getAdminDashboard = async (req: AuthRequest, res: Response) => {
       endDate: { $gte: now },
     }).distinct("soldier");
 
-    const onLeaveIds = new Set(activeLeaves.map(id => id.toString()));
+    const onLeaveIds = new Set(
+      activeLeaves
+        .filter(id => validSoldierIds.has(id.toString()))
+        .map(id => id.toString())
+    );
 
     // 3. Active Assignments
     const activeAssignments = await Assignment.find({
@@ -158,7 +169,7 @@ export const getAdminDashboard = async (req: AuthRequest, res: Response) => {
 
     activeAssignments.forEach(assignment => {
       const soldierId = assignment.soldier.toString();
-      if (!onLeaveIds.has(soldierId)) {
+      if (validSoldierIds.has(soldierId) && !onLeaveIds.has(soldierId)) {
         busyIds.add(soldierId);
         
         // Aggregate task stats
@@ -399,6 +410,8 @@ export const getManagerOverviewDashboard = async (req: AuthRequest, res: Respons
       status: "active",
     });
 
+    const validSoldierIds = new Set(soldiers.map(s => s._id.toString()));
+
     // Get soldiers currently on leave
     const soldiersOnLeave = await Leave.find({
       manager: managerId,
@@ -407,7 +420,11 @@ export const getManagerOverviewDashboard = async (req: AuthRequest, res: Respons
       status: { $in: ["approved", "approved_by_manager"] },
     }).distinct("soldier");
 
-    const soldiersOnLeaveIds = new Set(soldiersOnLeave.map(id => id.toString()));
+    const soldiersOnLeaveIds = new Set(
+      soldiersOnLeave
+        .filter(id => validSoldierIds.has(id.toString()))
+        .map(id => id.toString())
+    );
 
     const activeAssignments = await Assignment.find({
       manager: managerId,
@@ -421,7 +438,7 @@ export const getManagerOverviewDashboard = async (req: AuthRequest, res: Respons
 
     // Only count as busy if soldier has active assignment AND is not on leave
     const busyAssignments = activeAssignments.filter(assignment => 
-      !soldiersOnLeaveIds.has(assignment.soldier.toString())
+      validSoldierIds.has(assignment.soldier.toString()) && !soldiersOnLeaveIds.has(assignment.soldier.toString())
     );
 
     const busyIds = new Set(
@@ -476,7 +493,11 @@ export const getManagerOverviewSoldiers = async (req: AuthRequest, res: Response
         return {
           ...soldier.toJSON(),
           isBusy: !!activeAssignment,
-          currentTask: activeAssignment?.task || null,
+          currentTask: activeAssignment ? {
+            title: (activeAssignment.task as any).title,
+            startTime: activeAssignment.startTime,
+            endTime: activeAssignment.endTime
+          } : null,
           isOnLeave: !!currentLeave,
           leaveDetails: currentLeave ? {
             reason: currentLeave.reason,
@@ -514,7 +535,7 @@ export const getManagerOverviewLeaves = async (req: AuthRequest, res: Response) 
 
 export const getAdminTasks = async (req: AuthRequest, res: Response) => {
   try {
-    const { managerId } = req.query;
+    const managerId = req.params.id || req.query.managerId;
 
     const filter: any = { isActive: true };
     if (managerId) {
@@ -568,13 +589,21 @@ export const createAdminAssignment = async (req: AuthRequest, res: Response) => 
       return res.status(404).json({ message: "Task not found or inactive" });
     }
 
-    // Check for overlapping assignments
+    // Check for overlapping assignments using valid statuses
     const overlap = await Assignment.findOne({
       soldier: soldierId,
       $or: [
-        { startTime: { $lt: end, $gte: start } },
-        { endTime: { $gt: start, $lte: end } },
-        { startTime: { $lte: start }, endTime: { $gte: end } },
+        { status: { $in: ["active", "pending_review"] } },
+        { status: { $exists: false } },
+      ],
+      $and: [
+        {
+          $or: [
+            { startTime: { $lt: end, $gte: start } },
+            { endTime: { $gt: start, $lte: end } },
+            { startTime: { $lte: start }, endTime: { $gte: end } },
+          ],
+        },
       ],
     });
 
@@ -604,6 +633,38 @@ export const createAdminAssignment = async (req: AuthRequest, res: Response) => 
     ]);
 
     res.status(201).json({ success: true, data: populated });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+export const getAdminAssignments = async (req: AuthRequest, res: Response) => {
+  try {
+    const managerId = req.params.id || req.query.managerId;
+    const { task } = req.query;
+
+    const query: any = {};
+    if (managerId) query.manager = managerId;
+    if (task) query.task = task;
+
+    const assignments = await Assignment.find(query)
+      .populate("soldier", "name rank armyNumber")
+      .populate("task", "title")
+      .sort({ createdAt: -1 });
+
+    const now = new Date();
+    const result = assignments.map(a => {
+      let status = "completed";
+      if (now < a.startTime) status = "upcoming";
+      else if (now >= a.startTime && now <= a.endTime) status = "active";
+      
+      return {
+        ...a.toObject(),
+        status
+      };
+    });
+
+    res.status(200).json({ success: true, data: result });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }

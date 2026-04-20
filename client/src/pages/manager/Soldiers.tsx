@@ -22,13 +22,6 @@ const STATUS_OPTIONS: { value: SoldierStatus; label: string }[] = [
   { value: "inactive", label: "Inactive" },
 ];
 
-const FILTER_OPTIONS: { value: string; label: string }[] = [
-  { value: "", label: "All Units" },
-  { value: "active", label: "Active" },
-  { value: "on_leave", label: "On Leave" },
-  { value: "inactive", label: "Inactive" },
-];
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const extractError = (err: unknown): string => {
@@ -54,16 +47,15 @@ const ManagerSoldiers = () => {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const { soldiers, isLoading } = useSelector((s: RootState) => s.soldiers);
-  const [filter, setFilter] = useState<string>("");
+  const [filter, setFilter] = useState<string>("total");
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const fetchSoldiers = async (statusFilter: string) => {
+  const fetchSoldiers = async () => {
     dispatch(setSoldierLoading(true));
     try {
-      const query = statusFilter ? `?status=${statusFilter}` : "";
       const res = await api.get<{ success: boolean; data: Soldier[] }>(
-        `${API_ROUTES.MANAGER}/soldiers${query}`
+        `${API_ROUTES.MANAGER}/soldiers`
       );
       dispatch(setSoldiers(res.data.data));
     } catch (err: unknown) {
@@ -72,8 +64,24 @@ const ManagerSoldiers = () => {
   };
 
   useEffect(() => {
-    fetchSoldiers(filter);
-  }, [filter]);
+    fetchSoldiers();
+  }, []);
+
+  const onDutyCount = soldiers.filter(s => s.isBusy && !s.isOnLeave).length;
+  const onLeaveCount = soldiers.filter(s => s.isOnLeave).length;
+  const freeCount = soldiers.filter(s => !s.isBusy && !s.isOnLeave).length;
+
+  let filteredSoldiers = soldiers;
+  if (filter === "on_duty") filteredSoldiers = soldiers.filter(s => s.isBusy && !s.isOnLeave);
+  else if (filter === "on_leave") filteredSoldiers = soldiers.filter(s => s.isOnLeave);
+  else if (filter === "free") filteredSoldiers = soldiers.filter(s => !s.isBusy && !s.isOnLeave);
+
+  const FILTER_OPTIONS = [
+    { value: "total", label: `Total (${soldiers.length})` },
+    { value: "on_duty", label: `On Duty (${onDutyCount})` },
+    { value: "on_leave", label: `On Leave (${onLeaveCount})` },
+    { value: "free", label: `Free (${freeCount})` },
+  ];
 
 
 
@@ -98,16 +106,8 @@ const ManagerSoldiers = () => {
     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
       
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-800/60 pb-6 relative">
+      <div className="flex flex-col md:flex-row md:items-end justify-end gap-4 border-b border-gray-800/60 pb-6 relative">
         <div className="absolute bottom-0 left-0 w-32 h-[1px] bg-gradient-to-r from-green-500 to-transparent"></div>
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-1.5 h-1.5 bg-green-500 rounded-full shadow-[0_0_8px_#22c55e]"></span>
-            <p className="text-green-500 text-xs tracking-[0.3em] uppercase font-mono">Operations Roster</p>
-          </div>
-          <h1 className="text-4xl font-extrabold text-white tracking-tight drop-shadow-sm">Soldier Registry</h1>
-          <p className="text-gray-400 text-sm mt-1">Manage and monitor all active personnel in your unit</p>
-        </div>
         
         <div className="flex flex-wrap items-center gap-3">
            <div className="flex items-center gap-1 bg-gray-900 border border-gray-800 rounded-xl px-2">
@@ -143,7 +143,7 @@ const ManagerSoldiers = () => {
         <div className="p-6 border-b border-gray-800/50 bg-gray-900/40 flex items-center justify-between">
           <h3 className="text-lg font-bold text-white tracking-wide">Personnel Matrix</h3>
           <span className="text-[10px] text-gray-600 font-mono tracking-widest uppercase font-bold bg-gray-950 px-2 py-1 rounded border border-gray-800">
-             {soldiers.length} Operatives
+             {filteredSoldiers.length} Operatives
           </span>
         </div>
 
@@ -152,7 +152,7 @@ const ManagerSoldiers = () => {
             <Activity size={40} className="text-green-500 mx-auto mb-4" />
             <p className="text-green-500/60 font-mono uppercase tracking-[0.2em] text-xs">Syncing Registry...</p>
           </div>
-        ) : !soldiers.length ? (
+        ) : !filteredSoldiers.length ? (
           <div className="p-20 text-center">
             <Users size={48} className="text-gray-800 mx-auto mb-4 opacity-30" />
             <p className="text-gray-500 font-medium tracking-wide font-mono uppercase text-xs">No operatives found in this category.</p>
@@ -167,11 +167,11 @@ const ManagerSoldiers = () => {
                   <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Unit</th>
                   <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Operational Status</th>
                   <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Account Status</th>
-                  <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Directives</th>
+                  <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800/40">
-                {soldiers.map((s) => (
+                {filteredSoldiers.map((s) => (
                   <tr key={s._id} className="hover:bg-gray-800/30 transition-colors group">
                     {/* Operative Info */}
                     <td className="px-6 py-5 whitespace-nowrap">
@@ -225,19 +225,15 @@ const ManagerSoldiers = () => {
                       <Badge status={s.isOnLeave ? "on_leave" : s.status} />
                     </td>
 
-                    {/* Directives/Actions */}
+                    {/* Actions */}
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-2">
-                        <select
-                          value={s.status}
-                          disabled={updatingId === s._id}
-                          onChange={(e) => handleStatusChange(s._id, e.target.value)}
-                          className="bg-gray-900 border border-gray-700 text-white text-xs font-semibold rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-green-500/50 appearance-none disabled:opacity-50 transition-all cursor-pointer hover:border-gray-600"
+                        <button
+                          onClick={() => navigate(`/manager/assign-task/${s._id}`)}
+                          className="whitespace-nowrap bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 hover:text-blue-300 border border-blue-900/50 text-[10px] uppercase tracking-widest font-bold px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5"
                         >
-                          {STATUS_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
-                          ))}
-                        </select>
+                          <Plus size={14} /> Assign Task
+                        </button>
                       </div>
                     </td>
                   </tr>

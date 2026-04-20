@@ -101,7 +101,11 @@ export const getAllSoldiers = async (req: AuthRequest, res: Response) => {
         return {
           ...soldier.toJSON(),
           isBusy: !!activeAssignment,
-          currentTask: activeAssignment?.task || null,
+          currentTask: activeAssignment ? {
+            title: (activeAssignment.task as any).title,
+            startTime: activeAssignment.startTime,
+            endTime: activeAssignment.endTime
+          } : null,
           isOnLeave: isOnLeave,
           leaveDetails: activeLeave ? {
             reason: activeLeave.reason,
@@ -272,14 +276,22 @@ export const createAssignment = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "Task not found" });
     }
 
-    // 🔥 overlap check (NO STATUS)
+    // 🔥 overlap check using valid statuses
     const overlap = await Assignment.findOne({
       soldier: soldierId,
       manager: req.user!.id,
       $or: [
-        { startTime: { $lt: end, $gte: start } },
-        { endTime: { $gt: start, $lte: end } },
-        { startTime: { $lte: start }, endTime: { $gte: end } },
+        { status: { $in: ["active", "pending_review"] } },
+        { status: { $exists: false } },
+      ],
+      $and: [
+        {
+          $or: [
+            { startTime: { $lt: end, $gte: start } },
+            { endTime: { $gt: start, $lte: end } },
+            { startTime: { $lte: start }, endTime: { $gte: end } },
+          ],
+        },
       ],
     });
 
@@ -412,6 +424,8 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
       status: { $in: ["active", "on_leave"] },
     });
 
+    const validSoldierIds = new Set(soldiers.map((s) => s._id.toString()));
+
     const activeAssignments = await Assignment.find({
       startTime: { $lte: now },
       endTime: { $gte: now },
@@ -429,10 +443,18 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
       endDate: { $gte: now },
     });
 
-    const onLeaveIds = new Set(activeLeaves.map(l => l.soldier.toString()));
+    const onLeaveIds = new Set(
+      activeLeaves
+        .filter((l) => validSoldierIds.has(l.soldier.toString()))
+        .map((l) => l.soldier.toString())
+    );
     const busyIds = new Set(
       activeAssignments
-        .filter(a => !onLeaveIds.has(a.soldier.toString()))
+        .filter(
+          (a) =>
+            validSoldierIds.has(a.soldier.toString()) &&
+            !onLeaveIds.has(a.soldier.toString())
+        )
         .map((a) => a.soldier.toString())
     );
 

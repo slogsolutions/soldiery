@@ -58,7 +58,13 @@ const AssignTask = () => {
           throw new Error(soldierRes.data.message || "Failed to load soldier details");
         }
 
-        const soldierData = soldierRes.data.data;
+        let soldierData;
+        if (isAdmin) {
+          soldierData = soldierRes.data.data;
+        } else {
+          soldierData = soldierRes.data.data.soldier;
+        }
+        
         setSoldier(soldierData);
 
         const tasksRoute = isAdmin
@@ -73,9 +79,10 @@ const AssignTask = () => {
         }
         setTasks(tasksRes.data.data);
 
+        // Calculate current date/time mapped correctly to local timezone for the datetime-local input
         const now = new Date();
-        const start = new Date(now.getTime() + 60 * 60 * 1000);
-        const end = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+        const start = new Date(now.getTime() - now.getTimezoneOffset() * 60000); // adjust to local for input display
+        const end = new Date(start.getTime() + 1 * 60 * 60 * 1000); 
 
         setStartTime(start.toISOString().slice(0, 16));
         setEndTime(end.toISOString().slice(0, 16));

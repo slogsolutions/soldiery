@@ -42,7 +42,11 @@ interface Soldier {
   status: string;
   isOnLeave?: boolean;
   isBusy?: boolean;
-  currentTask?: { title: string } | null;
+  currentTask?: { 
+    title: string;
+    startTime?: string;
+    endTime?: string;
+  } | null;
   manager?: { name: string; rank: string };
 }
 
@@ -131,8 +135,8 @@ const AdminDashboard = () => {
   }
 
   const pieData = [
-    { name: "Free", value: data.free, color: "#10b981", category: 'free' },
-    { name: "Busy", value: data.busy, color: "#3b82f6", category: 'busy' },
+    { name: "Available", value: data.free, color: "#10b981", category: 'free' },
+    { name: "On Duty", value: data.busy, color: "#3b82f6", category: 'busy' },
     { name: "On Leave", value: data.onLeave, color: "#f59e0b", category: 'on_leave' },
   ].filter(d => d.value > 0);
 
@@ -297,34 +301,91 @@ const AdminDashboard = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {managers.map((manager) => (
-            <div
-              key={manager._id}
-              onClick={() => navigate(`/admin/manager/${manager._id}`)}
-              className="cursor-pointer bg-gray-900/60 border border-gray-800/80 rounded-2xl p-4 hover:border-blue-500/40 transition-all group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-900/30 border border-blue-800/50 flex items-center justify-center font-bold text-blue-300 group-hover:scale-110 transition-transform">
-                  {manager.name.charAt(0).toUpperCase()}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {managers.map((manager) => {
+            const managerSoldiers = soldiers.filter(s => {
+              const mgrId = (s as any).manager?._id || (s as any).manager;
+              return mgrId === manager._id;
+            });
+            const onLeaveCount = managerSoldiers.filter(s => s.isOnLeave).length;
+            const onDutyCount = managerSoldiers.filter(s => s.isBusy && !s.isOnLeave).length;
+            const freeCount = managerSoldiers.filter(s => !s.isBusy && !s.isOnLeave).length;
+            const totalCount = managerSoldiers.length;
+
+            const managerPieData = [
+              { name: "Free", value: freeCount, color: "#10b981" },
+              { name: "On Duty", value: onDutyCount, color: "#3b82f6" },
+              { name: "On Leave", value: onLeaveCount, color: "#f59e0b" },
+            ].filter(d => d.value > 0);
+
+            return (
+              <div
+                key={manager._id}
+                onClick={() => navigate(`/admin/manager/${manager._id}`)}
+                className="cursor-pointer bg-gray-900/60 border border-gray-800/80 rounded-2xl p-4 hover:border-blue-500/40 transition-all group flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-900/30 border border-blue-800/50 flex items-center justify-center font-bold text-blue-300 group-hover:scale-110 transition-transform">
+                      {manager.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-bold text-sm truncate">{manager.name}</p>
+                      <p className="text-[10px] text-gray-500 font-mono uppercase tracking-tighter">#{manager.armyNumber}</p>
+                    </div>
+                  </div>
+                  <span className={`w-1.5 h-1.5 rounded-full ${manager.status === 'active' ? 'bg-green-500 shadow-[0_0_5px_#22c55e]' : 'bg-gray-600'}`} title={`Account Status: ${manager.status}`} />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-white font-bold text-sm truncate">{manager.name}</p>
-                  <p className="text-[10px] text-gray-500 font-mono uppercase tracking-tighter">#{manager.armyNumber}</p>
+
+                <div className="flex items-center justify-between bg-gray-950/40 rounded-xl p-3 border border-gray-800/50 gap-4 mb-3">
+                  {totalCount > 0 ? (
+                    <div className="w-14 h-14 pointer-events-none relative flex-shrink-0">
+                      <ResponsiveContainer width={56} height={56}>
+                        <PieChart>
+                          <Pie
+                            data={managerPieData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={15}
+                            outerRadius={28}
+                            dataKey="value"
+                            stroke="none"
+                          >
+                            {managerPieData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div className="w-14 h-14 flex items-center justify-center rounded-full border border-dashed border-gray-700 bg-gray-900/30 flex-shrink-0">
+                      <Users size={16} className="text-gray-600 opacity-50" />
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-1 text-[10px] font-bold tracking-widest text-right whitespace-nowrap">
+                    <span className="text-gray-500 border-b border-gray-800/60 pb-1 mb-1">UNITS: <span className="text-white ml-2">{totalCount}</span></span>
+                    <span className="text-blue-400">DUTY: <span className="ml-1">{onDutyCount}</span></span>
+                    <span className="text-green-400">FREE: <span className="ml-1">{freeCount}</span></span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-gray-800/50 flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase">{manager.unit || 'No Unit'}</span>
+                  <span className="text-[9px] text-blue-500/80 uppercase font-black tracking-widest group-hover:text-blue-400 align-middle">
+                    OPEN OVERVIEW <ChevronRight size={10} className="inline mb-0.5" />
+                  </span>
                 </div>
               </div>
-              <div className="mt-3 pt-3 border-t border-gray-800/50 flex justify-between items-center">
-                <span className="text-[10px] font-bold text-gray-500 uppercase">{manager.unit || 'No Unit'}</span>
-                <span className={`w-1.5 h-1.5 rounded-full ${manager.status === 'active' ? 'bg-green-500 shadow-[0_0_5px_#22c55e]' : 'bg-gray-600'}`} />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
       {/* Managers Roster Modal */}
       {selectedPersonnel === 'managers' && (
-        <Modal title="Supreme Manager Roster" onClose={() => setSelectedPersonnel(null)} size="xl">
+        <Modal title="Supreme Manager Roster" onClose={() => setSelectedPersonnel(null)} size="xl" centerToContent={true}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-950/50">
@@ -379,9 +440,10 @@ const AdminDashboard = () => {
       {/* Personnel List Modal (Category or Task) */}
       {(selectedCategory || selectedTask) && (
         <Modal 
-          title={selectedCategory ? `${selectedCategory.replace('_', ' ').toUpperCase()} PERSONNEL` : `DUTY ROSTER: ${selectedTask}`}
+          title={selectedCategory ? `${selectedCategory.replace('busy', 'ON DUTY').replace('_', ' ').toUpperCase()} PERSONNEL` : `DUTY ROSTER: ${selectedTask}`}
           onClose={() => { setSelectedCategory(null); setSelectedTask(null); }}
           size="xl"
+          centerToContent={true}
         >
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -389,7 +451,14 @@ const AdminDashboard = () => {
                 <tr>
                   <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Soldier</th>
                   <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Manager / Unit</th>
-                  <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Current Status</th>
+                  {selectedCategory === 'on_leave' ? (
+                    <>
+                      <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Leave Start</th>
+                      <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Leave End</th>
+                    </>
+                  ) : (
+                    <th className="text-left px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Current Status</th>
+                  )}
                   <th className="text-right px-6 py-4 font-bold text-gray-400 text-xs tracking-widest uppercase">Action</th>
                 </tr>
               </thead>
@@ -415,18 +484,35 @@ const AdminDashboard = () => {
                       <p className="text-gray-300 font-semibold">{s.manager?.name || 'GEN HQ'}</p>
                       <p className="text-[10px] text-gray-500 uppercase">{s.unit || 'Global Command'}</p>
                     </td>
-                    <td className="px-6 py-4">
-                      {s.isOnLeave ? (
-                        <span className="text-amber-500 text-[10px] font-black tracking-widest border border-amber-900/50 px-2 py-0.5 rounded bg-amber-950/30 uppercase">ON LEAVE</span>
-                      ) : s.isBusy ? (
-                        <div className="flex flex-col">
-                          <span className="text-blue-400 text-[10px] font-black tracking-widest border border-blue-900/50 px-2 py-0.5 rounded bg-blue-950/30 uppercase w-fit">BUSY</span>
-                          <span className="text-[10px] text-gray-500 mt-1 italic">{s.currentTask?.title}</span>
-                        </div>
-                      ) : (
-                        <span className="text-emerald-500 text-[10px] font-black tracking-widest border border-emerald-900/50 px-2 py-0.5 rounded bg-emerald-950/30 uppercase">AVAILABLE</span>
-                      )}
-                    </td>
+                    {selectedCategory === 'on_leave' ? (
+                      <>
+                        <td className="px-6 py-4 text-[11px] font-mono text-gray-300">
+                          {(s as any).leaveDetails ? new Date((s as any).leaveDetails.startDate).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 text-[11px] font-mono text-gray-300">
+                          {(s as any).leaveDetails ? new Date((s as any).leaveDetails.endDate).toLocaleDateString() : 'N/A'}
+                        </td>
+                      </>
+                    ) : (
+                      <td className="px-6 py-4">
+                        {s.isOnLeave ? (
+                          <span className="text-amber-500 text-[10px] font-black tracking-widest border border-amber-900/50 px-2 py-0.5 rounded bg-amber-950/30 uppercase">ON LEAVE</span>
+                        ) : s.isBusy ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-blue-400 text-xs font-black tracking-widest border border-blue-900/50 px-2 py-1 rounded bg-blue-950/30 uppercase w-fit">ON DUTY</span>
+                            <span className="text-sm font-bold text-gray-200">{s.currentTask?.title}</span>
+                            {s.currentTask?.startTime && s.currentTask?.endTime && (
+                              <span className="text-[11px] text-gray-400 font-mono">
+                                {new Date(s.currentTask.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - 
+                                {new Date(s.currentTask.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-emerald-500 text-xs font-black tracking-widest border border-emerald-900/50 px-2 py-1 rounded bg-emerald-950/30 uppercase">AVAILABLE</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-6 py-4 text-right">
                        <button 
                         onClick={() => navigate(`/admin/soldier/${s._id}`)}

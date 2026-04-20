@@ -19,7 +19,7 @@ const Layout = ({ children }: LayoutProps) => {
       <div className="fixed bottom-0 right-0 w-[600px] h-[600px] bg-blue-900/10 rounded-full blur-[150px] pointer-events-none z-0"></div>
 
       {/* Sidebar — fixed left */}
-      <div className="fixed top-0 left-0 h-full z-20">
+      <div className="fixed top-0 left-0 h-full z-[60]">
         <Sidebar />
       </div>
 

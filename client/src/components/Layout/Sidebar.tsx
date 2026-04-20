@@ -50,7 +50,7 @@ const Sidebar = () => {
   };
 
   return (
-    <aside className="w-72 bg-gray-950 text-gray-300 h-screen flex flex-col border-r border-gray-800/50 shadow-2xl relative z-10">
+    <aside className="w-72 bg-gray-950 text-gray-300 h-screen flex flex-col border-r border-gray-800/50 shadow-2xl relative z-[60]">
       <div className="p-6 border-b border-gray-800/50 flex flex-col items-start gap-2">
         <div className="flex items-center gap-3 w-full">
           <div className="w-10 h-10 rounded-xl bg-green-900/40 border border-green-800 flex items-center justify-center text-green-500 shadow-inner">

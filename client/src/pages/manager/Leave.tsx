@@ -42,12 +42,10 @@ const formatDate = (iso: string) =>
 
 // ─── Filter Constants ────────────────────────────────────────────────────────
 
-const STATUS_FILTERS = [
-  { label: "All Status", value: "all" },
-  { label: "Pending", value: "pending" },
-  { label: "Sent to Admin", value: "approved_by_manager" },
-  { label: "Approved", value: "approved" },
-  { label: "Rejected", value: "rejected" },
+const TAB_OPTIONS = [
+  { label: "Pending Inbox", value: "pending" },
+  { label: "Active Deployments", value: "active" },
+  { label: "Unit Logbook", value: "history" },
 ];
 
 // ─── Modal Forms ─────────────────────────────────────────────────────────────
@@ -174,6 +172,53 @@ const EditForm = ({
   );
 };
 
+const ModifyActiveForm = ({ 
+  leave,
+  onConfirm, 
+  onCancel, 
+  loading 
+}: { 
+  leave: any;
+  onConfirm: (data: { endDate: string }) => void; 
+  onCancel: () => void; 
+  loading: boolean;
+}) => {
+  const [endDate, setEndDate] = useState(leave.endDate ? new Date(leave.endDate).toISOString().split('T')[0] : "");
+  
+  return (
+    <div className="space-y-4">
+      <p className="text-gray-400 text-sm mb-4">You are modifying an active deployment absence. Setting the end date to today will immediately return the operative to active duty.</p>
+      <div>
+        <label className="block text-xs font-semibold text-gray-400 mb-1.5 tracking-widest uppercase">New Return Date</label>
+        <input
+          type="date"
+          value={endDate}
+          min={new Date(leave.startDate).toISOString().split('T')[0]}
+          onChange={(e) => setEndDate(e.target.value)}
+          className="w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+        />
+      </div>
+      <div className="flex gap-3 mt-6">
+        <button onClick={() => setEndDate(new Date().toISOString().split('T')[0])} className="flex-1 bg-blue-900/40 text-blue-400 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-900/60 border border-blue-800/50 transition-all">
+          Return To Duty Today
+        </button>
+      </div>
+      <div className="flex gap-3 pt-2">
+        <button onClick={onCancel} className="flex-1 bg-gray-800 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-700 transition-all">
+          Cancel
+        </button>
+        <button 
+          onClick={() => onConfirm({ endDate })} 
+          disabled={loading || !endDate}
+          className="flex-1 bg-green-600 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-green-500 transition-all shadow-lg"
+        >
+          {loading ? "Updating..." : "Confirm Schedule"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const ManagerLeaves = () => {
@@ -181,10 +226,10 @@ const ManagerLeaves = () => {
   const navigate = useNavigate();
   const { id: soldierId } = useParams<{ id: string }>();
   const { leaves, isLoading } = useSelector((s: RootState) => s.leaves);
-  const [filter, setFilter] = useState("all");
+  const [activeTab, setActiveTab] = useState<"pending" | "active" | "history">("pending");
   
   // Modal states
-  const [activeModal, setActiveModal] = useState<"approve" | "reject" | "edit" | "send-to-admin" | null>(null);
+  const [activeModal, setActiveModal] = useState<"approve" | "reject" | "edit" | "send-to-admin" | "modify-active" | null>(null);
   const [selectedLeave, setSelectedLeave] = useState<Leave | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -293,7 +338,25 @@ const ManagerLeaves = () => {
     }
   };
 
-  const filteredLeaves = leaves.filter(l => filter === "all" || l.status === filter);
+  const filteredLeaves = leaves.filter(leave => {
+    const isApproved = leave.status === "approved";
+    const isPending = leave.status === "pending";
+    const isRejected = leave.status === "rejected";
+    const isSentToAdmin = leave.status === "approved_by_manager";
+      
+    const now = new Date();
+    now.setHours(0,0,0,0);
+    const leaveEndDate = new Date(leave.endDate);
+    leaveEndDate.setHours(23,59,59,999);
+      
+    const isActiveOrUpcoming = isApproved && leaveEndDate >= now;
+    const isCompleted = isApproved && leaveEndDate < now;
+
+    if (activeTab === "pending") return isPending;
+    if (activeTab === "active") return isActiveOrUpcoming;
+    if (activeTab === "history") return isRejected || isSentToAdmin || isCompleted;
+    return true;
+  });
 
   return (
     <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
@@ -312,12 +375,12 @@ const ManagerLeaves = () => {
         
         <div className="flex flex-wrap items-center gap-2">
            <Filter size={16} className="text-gray-600 mr-2" />
-           {STATUS_FILTERS.map((f) => (
+           {TAB_OPTIONS.map((f) => (
              <button
                key={f.value}
-               onClick={() => setFilter(f.value)}
+               onClick={() => setActiveTab(f.value as any)}
                className={`px-4 py-2 rounded-xl text-xs font-bold tracking-widest uppercase transition-all border ${
-                 filter === f.value 
+                 activeTab === f.value 
                    ? "bg-green-900/40 text-green-400 border-green-500/40 shadow-[0_0_15px_rgba(34,197,94,0.1)]" 
                    : "bg-gray-900 text-gray-500 border-gray-800 hover:text-gray-300 hover:border-gray-700"
                }`}
@@ -389,10 +452,22 @@ const ManagerLeaves = () => {
                         <p className="text-gray-400 text-xs leading-relaxed italic max-w-sm line-clamp-2">"{leave.reason}"</p>
                       </td>
                       <td className="px-6 py-4">
-                        <Badge status={leave.status} />
+                        {activeTab === "pending" && (
+                          <span className="text-yellow-400 text-[10px] font-black tracking-widest border border-yellow-900/50 px-2 py-0.5 rounded bg-yellow-950/30 uppercase">PENDING REVIEW</span>
+                        )}
+                        {activeTab === "active" && (
+                           new Date(leave.startDate) > new Date() 
+                             ? <span className="text-blue-400 text-[10px] font-black tracking-widest border border-blue-900/50 px-2 py-0.5 rounded bg-blue-950/30 uppercase">SCHEDULED / UPCOMING</span>
+                             : <span className="text-green-400 text-[10px] font-black tracking-widest border border-green-900/50 px-2 py-0.5 rounded bg-green-950/30 uppercase animate-pulse">ACTIVE NOW</span>
+                        )}
+                        {activeTab === "history" && (
+                           leave.status === "rejected" ? <span className="text-red-400 text-[10px] font-black tracking-widest border border-red-900/50 px-2 py-0.5 rounded bg-red-950/30 uppercase">REJECTED</span> :
+                           leave.status === "approved_by_manager" ? <span className="text-purple-400 text-[10px] font-black tracking-widest border border-purple-900/50 px-2 py-0.5 rounded bg-purple-950/30 uppercase">ESCALATED TO HQ</span> :
+                           <span className="text-gray-400 text-[10px] font-black tracking-widest border border-gray-800/80 px-2 py-0.5 rounded bg-gray-900/50 uppercase">COMPLETED & RETURNED</span>
+                        )}
                       </td>
                       <td className="px-6 py-4">
-                        {leave.status === "pending" ? (
+                        {activeTab === "pending" && (
                           <div className="flex items-center gap-2">
                             <button 
                               onClick={() => { setSelectedLeave(leave); setActiveModal("approve"); }}
@@ -423,10 +498,28 @@ const ManagerLeaves = () => {
                               <Send size={16} />
                             </button>
                           </div>
-                        ) : (
-                          <span className="text-gray-600 text-[10px] uppercase font-bold tracking-widest flex items-center gap-2">
-                             <CheckCircle2 size={14} className="opacity-50" /> Completed
-                          </span>
+                        )}
+                        {activeTab === "active" && (
+                          <button
+                            onClick={() => { setSelectedLeave(leave); setActiveModal("modify-active"); }}
+                            className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 bg-blue-900/30 text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                          >
+                            Manage Active Leave
+                          </button>
+                        )}
+                        {activeTab === "history" && (
+                          leave.status === "approved" ? (
+                            <button
+                              onClick={() => { setSelectedLeave(leave); setActiveModal("modify-active"); }}
+                              className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 bg-gray-800 text-gray-400 border border-gray-700 rounded-lg hover:bg-gray-600 hover:text-white transition-all shadow-sm"
+                            >
+                              Amend Record
+                            </button>
+                          ) : (
+                            <span className="text-gray-600 text-[10px] uppercase font-bold tracking-widest flex items-center gap-2">
+                               <CheckCircle2 size={14} className="opacity-50" /> Logged
+                            </span>
+                          )
                         )}
                       </td>
                     </tr>
@@ -460,6 +553,12 @@ const ManagerLeaves = () => {
       {activeModal === "edit" && selectedLeave && (
         <Modal title="Revise Request Parameters" onClose={() => setActiveModal(null)} size="md">
           <EditForm leave={selectedLeave} onConfirm={(data) => handleAction("edit", data)} onCancel={() => setActiveModal(null)} loading={actionLoading} />
+        </Modal>
+      )}
+
+      {activeModal === "modify-active" && selectedLeave && (
+        <Modal title="Modify Active Leave Schedule" onClose={() => setActiveModal(null)} size="md">
+          <ModifyActiveForm leave={selectedLeave} onConfirm={(data) => handleAction("edit", data)} onCancel={() => setActiveModal(null)} loading={actionLoading} />
         </Modal>
       )}
 

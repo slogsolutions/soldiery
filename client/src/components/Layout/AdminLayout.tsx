@@ -7,8 +7,10 @@ const AdminLayout = ({ children }: { children: React.ReactNode }) => {
       <div className="absolute bottom-[-10%] right-[-5%] w-96 h-96 bg-blue-500/5 rounded-full blur-[100px] pointer-events-none" />
 
       <AdminSidebar />
-      <main className="flex-1 flex flex-col min-h-screen w-full relative z-10 px-8 py-6 overflow-y-auto custom-scrollbar">
-        {children}
+      <main className="flex-1 min-h-screen relative z-10 overflow-y-auto custom-scrollbar bg-gray-950/20">
+        <div className="max-w-[1440px] mx-auto w-full px-4 sm:px-10 py-12 animate-in fade-in slide-in-from-bottom-2 duration-1000">
+          {children}
+        </div>
       </main>
     </div>
   );
