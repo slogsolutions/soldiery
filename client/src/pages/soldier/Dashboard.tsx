@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import type { AppDispatch, RootState } from "../../store/store";
@@ -66,7 +66,7 @@ const MyTasksTab = () => {
   const { assignments, isLoading } = useSelector((s: RootState) => s.assignments);
   const [statusFilter, setStatusFilter] = useState("");
 
-  const fetchAssignments = async () => {
+  const fetchAssignments = useCallback(async () => {
     dispatch(setAssignmentLoading(true));
     try {
       const res = await api.get<{ success: boolean; data: Assignment[] }>(
@@ -76,11 +76,11 @@ const MyTasksTab = () => {
     } catch (err: unknown) {
       dispatch(setAssignmentError(extractError(err)));
     }
-  };
+  }, [dispatch]);
 
   useEffect(() => {
     fetchAssignments();
-  }, []);
+  }, [fetchAssignments]);
 
   const filtered = (assignments as Assignment[]).filter(
     (a) => !statusFilter || a.status === statusFilter
@@ -201,7 +201,7 @@ const LeavesTab = () => {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const fetchLeaves = async () => {
+  const fetchLeaves = useCallback(async () => {
     dispatch(setLeaveLoading(true));
     try {
       const res = await api.get("/api/leaves/soldier/leaves");
@@ -209,11 +209,11 @@ const LeavesTab = () => {
     } catch (err: unknown) {
       dispatch(setLeaveError(extractError(err)));
     }
-  };
+  }, [dispatch]);
 
   useEffect(() => {
     fetchLeaves();
-  }, []);
+  }, [fetchLeaves]);
 
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -243,8 +243,8 @@ const LeavesTab = () => {
       dispatch(addLeave(res.data.data));
       setShowModal(false);
       setForm({ reason: "", otherReason: "", startDate: "", endDate: "" });
-    } catch (err: any) {
-      setFormError(err.response?.data?.message || extractError(err));
+    } catch (err: unknown) {
+      setFormError((err as any).response?.data?.message || extractError(err));
     } finally {
       setSubmitting(false);
     }
@@ -420,7 +420,7 @@ const SoldierDashboard = () => {
   const { user } = useSelector((s: RootState) => s.auth);
   const [activeTab, setActiveTab] = useState<ActiveTab>("tasks");
 
-  const tabs: { id: ActiveTab; label: string; icon: any }[] = [
+  const tabs: { id: ActiveTab; label: string; icon: typeof ClipboardList }[] = [
     { id: "tasks", label: "My Assignments", icon: ClipboardList },
     { id: "leaves", label: "Leave Management", icon: Clock },
   ];

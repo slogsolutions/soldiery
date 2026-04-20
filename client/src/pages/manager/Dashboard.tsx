@@ -202,7 +202,9 @@ const ManagerDashboard = () => {
     fetchDashboard();
     const interval = setInterval(fetchDashboard, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const taskCounts = useDynamicTaskCounts(soldiers, tasks);
 
   if (loading) {
     return (
@@ -307,12 +309,11 @@ const ManagerDashboard = () => {
   };
 
   const filteredSoldiers = getFilteredSoldiers();
-  const taskCounts = useDynamicTaskCounts(soldiers, tasks);
   const isAdmin = user?.role === 'admin';
 
   const taskPieData: PieSlice[] = Object.entries(taskCounts)
-    .filter(([_, { count }]) => count > 0)
-    .map(([taskId, { count, task }], index) => {
+    .filter(([, { count }]) => count > 0)
+    .map(([, { count, task }], index) => {
       const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
       return {
         label: task.title.toUpperCase(),

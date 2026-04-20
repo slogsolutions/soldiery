@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useParams, useNavigate } from "react-router-dom";
 import type { AppDispatch, RootState } from "../../store/store";
@@ -10,20 +10,16 @@ import {
 } from "../../store/slices/leaveSlice";
 import type { Leave } from "../../store/slices/leaveSlice";
 import api from "../../api/axios";
-import Badge from "../../components/ui/Badge";
 import Modal from "../../components/ui/Modal";
 import { 
   Clock, 
-  Calendar, 
   CheckCircle2, 
   XCircle, 
   Send,
   Pencil,
   AlertCircle,
-  ChevronRight,
   Filter,
   User,
-  MoreVertical
 } from "lucide-react";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -178,7 +174,7 @@ const ModifyActiveForm = ({
   onCancel, 
   loading 
 }: { 
-  leave: any;
+  leave: Leave;
   onConfirm: (data: { endDate: string }) => void; 
   onCancel: () => void; 
   loading: boolean;
@@ -241,17 +237,17 @@ const ManagerLeaves = () => {
     reason: "",
     originalDays: 0
   });
-  const [soldier, setSoldier] = useState<any>(null);
+  const [soldier, setSoldier] = useState<{ _id: string; name: string } | null>(null);
 
-  const fetchLeaves = async () => {
+  const fetchLeaves = useCallback(async () => {
     dispatch(setLeaveLoading(true));
     try {
       const res = await api.get("/api/leaves/manager/leaves");
       dispatch(setLeaves(res.data.data));
-    } catch (err: any) {
+    } catch (err: unknown) {
       dispatch(setLeaveError(extractError(err)));
     }
-  };
+  }, [dispatch]);
 
   useEffect(() => {
     fetchLeaves();
@@ -261,9 +257,9 @@ const ManagerLeaves = () => {
       fetchSoldierData();
       setShowApplyForm(true);
     }
-  }, [soldierId]);
+  }, [soldierId, fetchLeaves, fetchSoldierData]);
 
-  const fetchSoldierData = async () => {
+  const fetchSoldierData = useCallback(async () => {
     try {
       const res = await api.get(`/api/manager/soldiers/${soldierId}`);
       if (res.data.success) {
@@ -272,7 +268,7 @@ const ManagerLeaves = () => {
     } catch (err) {
       console.error('Failed to fetch soldier data:', err);
     }
-  };
+  }, [soldierId]);
 
   const handleApplyLeave = async () => {
     if (!soldier || !applyFormData.startDate || !applyFormData.endDate || !applyFormData.reason.trim()) return;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../../store/store";
@@ -10,17 +10,13 @@ import type { Soldier } from "../../store/slices/soldierSlice";
 import api from "../../api/axios";
 import { API_ROUTES } from "@/utils/constant";
 import Badge from "../../components/ui/Badge";
-import { AlertCircle, Filter, Users, ChevronRight, Activity, ShieldCheck, Plus } from "lucide-react";
+import { Filter, Users, Activity, Plus } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type SoldierStatus = "pending" | "active" | "on_leave" | "inactive";
 
-const STATUS_OPTIONS: { value: SoldierStatus; label: string }[] = [
-  { value: "active", label: "Active" },
-  { value: "on_leave", label: "On Leave" },
-  { value: "inactive", label: "Inactive" },
-];
+
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -48,10 +44,9 @@ const ManagerSoldiers = () => {
   const navigate = useNavigate();
   const { soldiers, isLoading } = useSelector((s: RootState) => s.soldiers);
   const [filter, setFilter] = useState<string>("total");
-  const [approvingId, setApprovingId] = useState<string | null>(null);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const fetchSoldiers = async () => {
+
+  const fetchSoldiers = useCallback(async () => {
     dispatch(setSoldierLoading(true));
     try {
       const res = await api.get<{ success: boolean; data: Soldier[] }>(
@@ -61,11 +56,11 @@ const ManagerSoldiers = () => {
     } catch (err: unknown) {
       dispatch(setSoldierError(extractError(err)));
     }
-  };
+  }, [dispatch]);
 
   useEffect(() => {
     fetchSoldiers();
-  }, []);
+  }, [fetchSoldiers]);
 
   const onDutyCount = soldiers.filter(s => s.isBusy && !s.isOnLeave).length;
   const onLeaveCount = soldiers.filter(s => s.isOnLeave).length;
@@ -85,20 +80,7 @@ const ManagerSoldiers = () => {
 
 
 
-  const handleStatusChange = async (id: string, status: string) => {
-    setUpdatingId(id);
-    try {
-      const res = await api.patch<{ success: boolean; data: Soldier }>(
-        `${API_ROUTES.MANAGER}/soldiers/${id}/status`,
-        { status }
-      );
-      dispatch(updateSoldier(res.data.data));
-    } catch (err: unknown) {
-      alert(extractError(err));
-    } finally {
-      setUpdatingId(null);
-    }
-  };
+
 
 
 

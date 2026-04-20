@@ -55,8 +55,9 @@ export default function RegisterSoldier() {
       }
       setSuccess({ name: form.name, armyNumber: form.armyNumber, password: form.password });
       setForm(EMPTY);
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Network error. Please try again.");
+    } catch (err: unknown) {
+      const errorMessage = (err as any).response?.data?.message || "Network error. Please try again.";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
