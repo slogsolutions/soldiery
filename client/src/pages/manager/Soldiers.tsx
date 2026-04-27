@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../../store/store";
 import {
-  setSoldiers, updateSoldier,
+  setSoldiers,
   setSoldierLoading, setSoldierError,
 } from "../../store/slices/soldierSlice";
 import type { Soldier } from "../../store/slices/soldierSlice";
@@ -14,7 +14,7 @@ import { Filter, Users, Activity, Plus } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type SoldierStatus = "pending" | "active" | "on_leave" | "inactive";
+
 
 
 
