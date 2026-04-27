@@ -22,8 +22,8 @@ export interface Leave {
   adminNote?: string;
   modifiedByManager: boolean;
   modifiedByAdmin: boolean;
-  reviewedBy?: { name: string; rank?: string };
-  approvedBy?: { name: string; rank?: string };
+  manager?: { _id: string; name: string; rank?: string; armyNumber?: string } | string;
+  managerId?: { _id: string; name: string } | string;
   createdAt: string;
 }
 
