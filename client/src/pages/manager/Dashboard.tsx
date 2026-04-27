@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   PieChart,
   Pie,
@@ -10,7 +10,7 @@ import {
 import api from "../../api/axios";
 import { useSelector } from "react-redux";
 import type { RootState } from "../../store/store";
-import { ShieldAlert, Users, FolderClock, Activity, ArrowLeft, Eye, Plus, Dumbbell, Footprints, Shield } from "lucide-react";
+import { ShieldAlert, Users, FolderClock, Activity, ArrowLeft, Eye, Plus, Dumbbell, Footprints, Shield, XCircle } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import Modal from "../../components/ui/Modal";
 
@@ -67,6 +67,13 @@ interface Assignment {
 interface Leave {
   _id: string;
   status: string;
+}
+
+interface ManagerInfo {
+  name: string;
+  rank?: string;
+  unit?: string;
+  armyNumber: string;
 }
 
 
@@ -151,8 +158,10 @@ const ManagerDashboard = () => {
   const { user } = useSelector((s: RootState) => s.auth);
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+  const isAdmin = user?.role === "admin";
 
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [managerInfo, setManagerInfo] = useState<ManagerInfo | null>(null);
   const [soldiers, setSoldiers] = useState<Soldier[]>([]);
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -162,8 +171,9 @@ const ManagerDashboard = () => {
   const [selectedCategory, setSelectedCategory] = useState<'free' | 'busy' | 'on_leave' | 'total' | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [taskAssignments, setTaskAssignments] = useState<Assignment[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
 
-  const fetchDashboard = async () => {
+  const fetchDashboard = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -171,13 +181,22 @@ const ManagerDashboard = () => {
       const soldRoute = id ? `/api/admin/managers/${id}/soldiers` : `/api/manager/soldiers`;
       const leaveRoute = id ? `/api/admin/managers/${id}/leaves` : `/api/manager/leaves`;
       const taskRoute = id ? `/api/admin/managers/${id}/tasks` : `/api/manager/tasks`;
+      const managerRoute = id ? `/api/admin/users/${id}` : null;
 
-      const [dashRes, soldRes, leaveRes, taskRes] = await Promise.allSettled([
+      const requests: Promise<any>[] = [
         api.get(dashRoute),
         api.get(soldRoute),
         api.get(leaveRoute),
         api.get(taskRoute),
-      ]);
+      ];
+
+      if (managerRoute) {
+        requests.push(api.get(managerRoute));
+      }
+
+      const results = await Promise.allSettled(requests);
+      
+      const [dashRes, soldRes, leaveRes, taskRes, managerRes] = results;
 
       if (dashRes.status === "fulfilled" && dashRes.value.data.success) {
         setDashboard(dashRes.value.data.data);
@@ -191,20 +210,66 @@ const ManagerDashboard = () => {
       if (taskRes.status === "fulfilled" && taskRes.value.data.success) {
         setTasks(taskRes.value.data.data);
       }
+      if (managerRes && managerRes.status === "fulfilled" && managerRes.value.data.success) {
+        setManagerInfo(managerRes.value.data.data);
+      }
     } catch (err: unknown) {
       setError((err as Error).message || "Something went wrong fetching data.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     fetchDashboard();
     const interval = setInterval(fetchDashboard, 60000);
     return () => clearInterval(interval);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchDashboard]);
 
   const taskCounts = useDynamicTaskCounts(soldiers, tasks);
+
+  const fetchTaskAssignments = useCallback(async (taskId: string) => {
+    try {
+      setAssignmentsLoading(true);
+      const endpoint = id 
+        ? `/api/admin/managers/${id}/assignments?task=${taskId}` 
+        : `/api/manager/assignments?task=${taskId}`;
+      const response = await api.get(endpoint);
+      if (response.data.success) {
+        setTaskAssignments(response.data.data);
+      }
+    } catch (err: unknown) {
+      console.error('Failed to fetch task assignments:', err);
+    } finally {
+      setAssignmentsLoading(false);
+    }
+  }, [id]);
+
+  const terminateAssignment = useCallback(async (assignmentId: string) => {
+    if (!window.confirm("Are you sure you want to terminate this duty? This will mark the task as completed for this soldier.")) return;
+    
+    try {
+      setAssignmentsLoading(true);
+      const url = isAdmin 
+        ? `/api/admin/assignments/${assignmentId}`
+        : `/api/manager/assignments/${assignmentId}`;
+        
+      const response = await api.patch(url, { status: 'completed' });
+      
+      if (response.data.success) {
+        // Refresh local data
+        await fetchDashboard();
+        if (selectedTask) {
+          await fetchTaskAssignments(selectedTask._id);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to terminate assignment:', err);
+      alert(err.response?.data?.message || "Failed to terminate task.");
+    } finally {
+      setAssignmentsLoading(false);
+    }
+  }, [isAdmin, fetchDashboard, fetchTaskAssignments, selectedTask]);
 
   if (loading) {
     return (
@@ -242,19 +307,7 @@ const ManagerDashboard = () => {
   const free = dashboard?.free || 0;
   const busy = dashboard?.busy || 0;
 
-  const fetchTaskAssignments = async (taskId: string) => {
-    try {
-      const endpoint = id 
-        ? `/api/admin/managers/${id}/assignments?task=${taskId}` 
-        : `/api/manager/assignments?task=${taskId}`;
-      const response = await api.get(endpoint);
-      if (response.data.success) {
-        setTaskAssignments(response.data.data);
-      }
-    } catch (err: unknown) {
-      console.error('Failed to fetch task assignments:', err);
-    }
-  };
+
 
   const handleTaskClick = (task: Task) => {
     setSelectedTask(task);
@@ -309,7 +362,6 @@ const ManagerDashboard = () => {
   };
 
   const filteredSoldiers = getFilteredSoldiers();
-  const isAdmin = user?.role === 'admin';
 
   const taskPieData: PieSlice[] = Object.entries(taskCounts)
     .filter(([, { count }]) => count > 0)
@@ -413,7 +465,7 @@ const ManagerDashboard = () => {
                     nameKey="label"
                     stroke="none"
                     isAnimationActive={true}
-                    onClick={(data) => data?.onClick?.()}
+                    onClick={(data: any) => data?.onClick?.()}
                     style={{ cursor: 'pointer' }}
                   >
                     {pieData.map((entry, index) => (
@@ -463,7 +515,7 @@ const ManagerDashboard = () => {
                     nameKey="label"
                     stroke="none"
                     isAnimationActive={true}
-                    onClick={(data) => data?.onClick?.()}
+                    onClick={(data: any) => data?.onClick?.()}
                     style={{ cursor: 'pointer' }}
                   >
                     {taskPieData.map((entry, index) => (
@@ -501,7 +553,8 @@ const ManagerDashboard = () => {
               </p>
               <button
                 onClick={() => setSelectedCategory('busy')}
-                className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                disabled={busy === 0}
+                className={`text-xs transition-colors ${busy === 0 ? 'text-gray-600 cursor-not-allowed' : 'text-blue-400 hover:text-blue-300'}`}
               >
                 View soldiers →
               </button>
@@ -509,7 +562,7 @@ const ManagerDashboard = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {Object.entries(taskCounts)
-                .filter(([_, { count }]) => count > 0)
+                .filter(([, { count }]) => count > 0)
                 .map(([taskId, { count, task }], index) => (
                   <TaskTypeBox
                     key={taskId}
@@ -590,7 +643,7 @@ const ManagerDashboard = () => {
                     {selectedCategory === 'busy' && (
                       <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">Current Task</th>
                     )}
-                    {(selectedCategory === 'free' || isAdmin) && (
+                    {(selectedCategory === 'free' || selectedCategory === 'busy' || isAdmin) && (
                       <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">Actions</th>
                     )}
                   </tr>
@@ -610,6 +663,9 @@ const ManagerDashboard = () => {
                       statusColor = "text-blue-400";
                       bgColor = "bg-blue-900/40";
                     }
+
+                    // Find assignment ID if busy
+                    const activeAssignmentId = soldier.isBusy && !soldier.isOnLeave && taskAssignments.find(a => a.soldier._id === soldier._id && a.status === 'active')?._id;
 
                     return (
                       <tr key={soldier._id} className="hover:bg-gray-800/30 transition-colors group">
@@ -648,7 +704,7 @@ const ManagerDashboard = () => {
                             )}
                           </td>
                         )}
-                        {(selectedCategory === 'free' || isAdmin) && (
+                        {(selectedCategory === 'free' || selectedCategory === 'busy' || isAdmin) && (
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               {isAdmin && (
@@ -664,17 +720,50 @@ const ManagerDashboard = () => {
                                 </button>
                               )}
 
-                              <button
-                                onClick={() => {
-                                  setSelectedCategory(null);
-                                  navigate(isAdmin ? `/admin/assign-task/${soldier._id}` : `/manager/assign-task/${soldier._id}`);
-                                }}
-                                className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors px-3 py-2 hover:bg-blue-900/20 rounded-lg border border-blue-900/30"
-                                title="Assign Task"
-                              >
-                                <Plus size={14} />
-                                <span className="text-xs uppercase tracking-[0.2em] font-bold">Assign</span>
-                              </button>
+                              {selectedCategory === 'free' ? (
+                                <button
+                                  onClick={() => {
+                                    setSelectedCategory(null);
+                                    navigate(isAdmin ? `/admin/assign-task/${soldier._id}` : `/manager/assign-task/${soldier._id}`);
+                                  }}
+                                  className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors px-3 py-2 hover:bg-blue-900/20 rounded-lg border border-blue-900/30"
+                                  title="Assign Task"
+                                >
+                                  <Plus size={14} />
+                                  <span className="text-xs uppercase tracking-[0.2em] font-bold">Assign</span>
+                                </button>
+                              ) : selectedCategory === 'busy' && (
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    // We need to find the assignment ID. 
+                                    // For simplicity in this view, we'll try to find it from the current busy soldiers data
+                                    // if it's available, otherwise it will require another fetch.
+                                    // Since we often view this from the task breakdown, it might already be there.
+                                    const assignment = taskAssignments.find(a => a.soldier._id === soldier._id && a.status === 'active');
+                                    if (assignment) {
+                                      await terminateAssignment(assignment._id);
+                                    } else {
+                                      // If not in taskAssignments (viewed from generic Busy list), we might need to fetch
+                                      // but most modern tasks list soldiers and their active assignment in the query.
+                                      // Given the current structure, we'll try to fetch assignments for this soldier briefly.
+                                      try {
+                                        const res = await api.get(isAdmin ? `/api/admin/assignments?soldierId=${soldier._id}` : `/api/manager/assignments?soldierId=${soldier._id}`);
+                                        const active = res.data.data.find((a: any) => a.status === 'active');
+                                        if (active) await terminateAssignment(active._id);
+                                        else alert("No active assignment found for this soldier.");
+                                      } catch (err) {
+                                        alert("Could not locate active assignment.");
+                                      }
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-2 text-red-400 hover:text-red-300 transition-colors px-3 py-2 hover:bg-red-900/20 rounded-lg border border-red-900/30"
+                                  title="Terminate Task"
+                                >
+                                  <XCircle size={14} />
+                                  <span className="text-xs uppercase tracking-[0.2em] font-bold">Free</span>
+                                </button>
+                              )}
                             </div>
                           </td>
                         )}
@@ -698,7 +787,14 @@ const ManagerDashboard = () => {
           }}
           size="xl"
         >
-          {taskAssignments.filter(a => a.status === 'active').length === 0 ? (
+          {assignmentsLoading ? (
+            <div className="p-8 text-center animate-pulse">
+              <Activity size={48} className="text-blue-500 mx-auto mb-4" />
+              <p className="text-blue-500 font-medium tracking-wide font-mono uppercase text-xs">
+                Accessing deployment records...
+              </p>
+            </div>
+          ) : taskAssignments.filter(a => a.status === 'active').length === 0 ? (
             <div className="p-8 text-center">
               <Users size={48} className="text-gray-800 mx-auto mb-4 opacity-30" />
               <p className="text-gray-500 font-medium tracking-wide font-mono uppercase text-xs">
@@ -716,9 +812,7 @@ const ManagerDashboard = () => {
                     <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">Rank</th>
                     <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">Start Time</th>
                     <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">End Time</th>
-                    {isAdmin && (
-                      <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase">Actions</th>
-                    )}
+                    <th className="text-left px-4 py-3 font-bold text-gray-400 text-xs tracking-widest uppercase text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800/40">
@@ -741,21 +835,32 @@ const ManagerDashboard = () => {
                         <td className="px-4 py-3 text-gray-300 font-mono text-xs">
                           {new Date(assignment.endTime).toLocaleString()}
                         </td>
-                        {isAdmin && (
-                          <td className="px-4 py-3">
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center gap-2">
+                            {isAdmin && (
+                              <button
+                                onClick={() => {
+                                  setSelectedTask(null);
+                                  setTaskAssignments([]);
+                                  navigate(`/admin/soldier/${assignment.soldier._id}`);
+                                }}
+                                className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-gray-800/50 rounded"
+                                title="View Soldier Details"
+                              >
+                                <Eye size={14} />
+                              </button>
+                            )}
+                            
                             <button
-                              onClick={() => {
-                                setSelectedTask(null);
-                                setTaskAssignments([]);
-                                navigate(`/admin/soldier/${assignment.soldier._id}`);
-                              }}
-                              className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-gray-800/50 rounded"
-                              title="View Soldier Details"
+                              onClick={() => terminateAssignment(assignment._id)}
+                              className="inline-flex items-center gap-2 text-red-400 hover:text-red-300 transition-colors px-3 py-1.5 hover:bg-red-900/20 rounded-lg border border-red-900/30"
+                              title="Terminate Duty"
                             >
-                              <Eye size={14} />
+                              <XCircle size={14} />
+                              <span className="text-xs uppercase tracking-widest font-bold">Free</span>
                             </button>
-                          </td>
-                        )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
