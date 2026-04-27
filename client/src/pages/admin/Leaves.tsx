@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../../store/store";
 import {
@@ -10,18 +10,13 @@ import {
 } from "../../store/slices/leaveSlice";
 import type { Leave } from "../../store/slices/leaveSlice";
 import api from "../../api/axios";
-import Badge from "../../components/ui/Badge";
 import Modal from "../../components/ui/Modal";
 import { 
   ShieldCheck, 
   Clock, 
   CheckCircle2, 
   XCircle, 
-  AlertCircle,
-  User,
   Activity,
-  ChevronRight,
-  Info
 } from "lucide-react";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -141,19 +136,19 @@ const AdminLeaves = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [editDays, setEditDays] = useState<number>(0);
 
-  const fetchAdminLeaves = async () => {
+  const fetchAdminLeaves = useCallback(async () => {
     dispatch(setLeaveLoading(true));
     try {
       const res = await api.get("/api/leaves/admin/leaves");
       dispatch(setLeaves(res.data.data));
-    } catch (err: any) {
+    } catch (err: unknown) {
       dispatch(setLeaveError(extractError(err)));
     }
-  };
+  }, [dispatch]);
 
   useEffect(() => {
     fetchAdminLeaves();
-  }, []);
+  }, [fetchAdminLeaves]);
 
   const handleAction = async (data?: string) => {
     if (!selectedLeave || !activeModal) return;
@@ -260,22 +255,23 @@ const AdminLeaves = () => {
               </thead>
               <tbody className="divide-y divide-gray-800/40">
                 {leaves.map((leave) => {
-                  const soldier = typeof leave.soldier === 'object' ? leave.soldier : { name: 'Unknown', armyNumber: '0000', rank: '' };
-                  return (
-                    <tr key={leave._id} className="hover:bg-gray-800/30 transition-colors group">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-3">
-                           <div className="w-9 h-9 rounded-xl bg-gray-800 flex items-center justify-center text-gray-400 font-bold border border-gray-700 shadow-inner group-hover:bg-blue-900/30 group-hover:text-blue-400 group-hover:border-blue-800/50 transition-all">
-                              {soldier.name.charAt(0)}
-                           </div>
-                           <div>
-                              <p className="font-bold text-white text-sm">{soldier.name}</p>
-                              <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">
-                                 Unit Liaison: {leave.managerId?.name || "Assigned Manager"}
-                              </p>
-                           </div>
-                        </div>
-                      </td>
+                   const soldier = typeof leave.soldier === 'object' ? leave.soldier : { name: 'Unknown', armyNumber: '0000', rank: '' };
+                   const manager = typeof leave.managerId === 'object' ? leave.managerId : { name: 'Assigned Manager' };
+                   return (
+                     <tr key={leave._id} className="hover:bg-gray-800/30 transition-colors group">
+                       <td className="px-6 py-4 whitespace-nowrap">
+                         <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-gray-800 flex items-center justify-center text-gray-400 font-bold border border-gray-700 shadow-inner group-hover:bg-blue-900/30 group-hover:text-blue-400 group-hover:border-blue-800/50 transition-all">
+                               {soldier.name.charAt(0)}
+                            </div>
+                            <div>
+                               <p className="font-bold text-white text-sm">{soldier.name}</p>
+                               <p className="text-[10px] text-gray-500 font-mono tracking-widest uppercase">
+                                  Unit Liaison: {manager.name}
+                               </p>
+                            </div>
+                         </div>
+                       </td>
                       <td className="px-6 py-4">
                         <div className="text-gray-300 text-[11px] font-mono mb-1">
                           {formatDate(leave.startDate)} → {formatDate(leave.endDate)}
