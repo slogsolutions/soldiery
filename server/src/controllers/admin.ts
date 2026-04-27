@@ -666,6 +666,49 @@ export const getAdminAssignments = async (req: AuthRequest, res: Response) => {
 
     res.status(200).json({ success: true, data: result });
   } catch (err: any) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const updateAdminAssignment = async (req: AuthRequest, res: Response) => {
+  try {
+    const assignment = await Assignment.findById(req.params.id);
+
+    if (!assignment) {
+      return res.status(404).json({ success: false, message: "Assignment not found" });
+    }
+
+    const { startTime, endTime, notes, priority, location, status } = req.body;
+
+    if (startTime) assignment.startTime = new Date(startTime);
+
+    if (status === "completed") {
+      assignment.status = "completed";
+      assignment.endTime = new Date();
+    } else if (endTime) {
+      assignment.endTime = new Date(endTime);
+    }
+
+    if (notes !== undefined) assignment.notes = notes;
+    if (priority !== undefined) assignment.priority = priority;
+    if (location !== undefined) assignment.location = location;
+    if (status && status !== "completed") assignment.status = status;
+
+    // validation (admin can override but we keep basic sanity)
+    if (assignment.status !== "completed" && assignment.endTime <= assignment.startTime) {
+      return res.status(400).json({ success: false, message: "Invalid time range" });
+    }
+
+    await assignment.save();
+
+    const populated = await assignment.populate([
+      { path: "soldier", select: "name rank armyNumber" },
+      { path: "task", select: "title" },
+      { path: "manager", select: "name" },
+    ]);
+
+    res.status(200).json({ success: true, data: populated });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
