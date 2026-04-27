@@ -389,16 +389,24 @@ export const updateAssignment = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "Assignment not found" });
     }
 
-    const { startTime, endTime, notes, priority, location } = req.body;
+    const { startTime, endTime, notes, priority, location, status } = req.body;
 
     if (startTime) assignment.startTime = new Date(startTime);
-    if (endTime) assignment.endTime = new Date(endTime);
+
+    if (status === "completed") {
+      assignment.status = "completed";
+      assignment.endTime = new Date();
+    } else if (endTime) {
+      assignment.endTime = new Date(endTime);
+    }
+
     if (notes !== undefined) assignment.notes = notes;
     if (priority !== undefined) assignment.priority = priority;
     if (location !== undefined) assignment.location = location;
+    if (status && status !== "completed") assignment.status = status;
 
     // 🔥 validate time again
-    if (assignment.endTime <= assignment.startTime) {
+    if (assignment.status !== "completed" && assignment.endTime <= assignment.startTime) {
       return res.status(400).json({ message: "Invalid time range" });
     }
 
