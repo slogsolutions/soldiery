@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 import { 
-  ShieldAlert, Activity, Users, UserCheck, 
-  ChevronRight, AlertCircle, Clock, Target, Shield, Briefcase, Trash2
+  ShieldAlert, Activity, Users, 
+  ChevronRight, Clock, Target, Shield, Briefcase, Trash2
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import Modal from "../../components/ui/Modal";
