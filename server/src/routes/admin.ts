@@ -26,6 +26,7 @@ import {
   // assignments
   getAdminAssignments,
   createAdminAssignment,
+  updateAdminAssignment,
 } from "../controllers/admin";
 
 const router = Router();
@@ -67,6 +68,7 @@ router.get("/tasks", getAdminTasks);
 // ─────────────────────────────
 router.get("/assignments", getAdminAssignments);
 router.post("/assignments", createAdminAssignment);
+router.patch("/assignments/:id", updateAdminAssignment);
 
 // ─────────────────────────────
 // MANAGER OVERVIEW DASHBOARD
